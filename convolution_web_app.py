@@ -7,9 +7,8 @@ import time
 
 # --- 1, 2, 3. 缓存计算、函数解析、状态管理 ---
 
-# ************ 关键修改: 初始平移时间改为 -3.0 ************
+# 初始平移时间 t = -3.0
 INITIAL_SHIFT_T = -3.0 
-# **********************************************************
 
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
@@ -206,7 +205,7 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     return fig
 
 
-# --- 5. Streamlit 主应用函数 (保持不变) ---
+# --- 5. Streamlit 主应用函数 ---
 
 def main_convolution_app():
     st.set_page_config(layout="wide") 
@@ -221,7 +220,9 @@ def main_convolution_app():
 
     # --- A. 输入控制区 (侧边栏) ---
     st.sidebar.header("输入控制")
-    f1_str = st.sidebar.text_input("f1(t) =", value="u(t) * exp(-t)")
+    # ************ 关键修改: f1(t) 初始值改为 rect(t, 4) ************
+    f1_str = st.sidebar.text_input("f1(t) =", value="rect(t, 4)")
+    # ***************************************************************
     f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
     col1, col2 = st.sidebar.columns(2)
     t_start = col1.number_input("T_start:", value=-6.0, step=1.0) 
@@ -243,7 +244,7 @@ def main_convolution_app():
         calculate_convolution_data.clear() 
         st.session_state.reset_flag = True
     
-    # 初始化时使用新的 INITIAL_SHIFT_T
+    # 初始化时使用 INITIAL_SHIFT_T = -3.0
     initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
     # --- 2. 当前平移时间移入侧边栏 ---
@@ -273,7 +274,7 @@ def main_convolution_app():
 
     if col_btn4.button("⏪ 重置"):
         st.session_state.is_running = False
-        # 重置按钮使用新的 INITIAL_SHIFT_T
+        # 重置按钮使用 INITIAL_SHIFT_T = -3.0
         st.session_state.current_t = INITIAL_SHIFT_T
         
 
