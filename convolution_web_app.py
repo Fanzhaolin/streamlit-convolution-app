@@ -2,14 +2,17 @@ import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
 import streamlit as st
+import time # 引入 time 库，虽然目前只用于 step_forward/backward 的逻辑，但为未来动画做准备
 
 # --- 1. 健壮的函数解析器和离散化 (保持不变) ---
 def evaluate_function(func_str, t):
-    # ... (evaluate_function 保持不变)
+    # 辅助函数
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
         return (np.abs(x / width) <= 0.5).astype(float)
+    
+    # 定义安全的执行环境
     env = {
         'np': np, 't': t, 'pi': np.pi, 'exp': np.exp, 'cos': np.cos,
         'sin': np.sin, 'abs': np.abs, 'sqrt': np.sqrt, 'u': u, 'rect': rect 
@@ -51,6 +54,14 @@ def step_forward(dt_step):
             st.session_state.conv_t_end
         )
 
+def step_backward(dt_step):
+    """点击按钮时，向后退回时间 dt_step."""
+    if st.session_state.current_t > st.session_state.conv_t_start:
+        st.session_state.current_t = max(
+            st.session_state.current_t - dt_step, 
+            st.session_state.conv_t_start
+        )
+
 # --- 3. Streamlit 主应用函数 ---
 
 def main_convolution_app():
@@ -59,7 +70,7 @@ def main_convolution_app():
     
     # 默认时间步长 (用于计算和绘图精度)
     dt = 0.01 
-    # 每次点击按钮推进的时间步长 (用于动画控制)
+    # 每次点击按钮推进/退回的时间步长 (用于手动控制)
     STEP_SIZE = 0.2
 
     # --- A. 输入控制区 ---
@@ -67,7 +78,8 @@ def main_convolution_app():
     f1_str = st.sidebar.text_input("f1(t) =", value="u(t) * exp(-t)")
     f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
     col1, col2 = st.sidebar.columns(2)
-    t_start = col1.number_input("T_start:", value=-5.0, step=1.0)
+    # **修改默认起始时间为 -6.0**
+    t_start = col1.number_input("T_start:", value=-6.0, step=1.0) 
     t_end = col2.number_input("T_end:", value=10.0, step=1.0)
     
     if t_start >= t_end:
@@ -90,33 +102,35 @@ def main_convolution_app():
     initialize_state(conv_t_start, conv_t_end)
 
 
-    # --- C. 动画控制区 (替代滑块) ---
+    # --- C. 动画控制区 (增加后退按钮) ---
     st.subheader("卷积过程控制")
     
-    # 使用占位符显示当前时间
+    # 显示当前时间
     time_display = st.empty()
-    time_display.markdown(f"**当前平移时间 t = {st.session_state.current_t:.2f}**")
+    time_display.markdown(f"**当前平移时间 $t = {st.session_state.current_t:.2f}$**")
 
-    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 6])
+    # 分割控制按钮区域
+    col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1, 1, 1, 5])
     
-    # 按钮 1: 前进
-    if col_btn1.button("▶️ 前进一步"):
+    # 按钮 1: 后退
+    if col_btn1.button("◀️ 后退一步"):
+        step_backward(STEP_SIZE)
+
+    # 按钮 2: 前进
+    if col_btn2.button("▶️ 前进一步"):
         step_forward(STEP_SIZE)
 
-    # 按钮 2: 重置
-    if col_btn2.button("⏪ 重置"):
+    # 按钮 3: 重置
+    if col_btn3.button("⏪ 重置"):
         st.session_state.current_t = st.session_state.conv_t_start
-        st.session_state.is_running = False # 停止自动播放
-
-    # 按钮 3: 自动播放 (使用 while True 和 time.sleep 模拟动画循环，需要额外的库或调整)
-    # 在 Streamlit 中，自动播放逻辑非常复杂，需要用到 st.empty() 和 time.sleep/rerun 配合。
-    # 暂时只提供手动控制，以保持代码简洁和 Streamlit 的兼容性。
+        st.session_state.is_running = False 
 
     # --- D. Matplotlib 绘图 ---
     
     # 获取当前状态时间
     t_shift = st.session_state.current_t
     
+    # 设置 Matplotlib 子图
     fig, (ax0_1, ax0_2, ax1, ax2) = plt.subplots(
         4, 1, 
         figsize=(8, 8), 
@@ -128,6 +142,7 @@ def main_convolution_app():
     )
     plt.subplots_adjust(top=0.95, bottom=0.05) 
 
+    # 确定轴范围
     max_y_orig = np.max([np.max(f1), np.max(f2), 1.0]) * 1.2
     min_y_orig = np.min([np.min(f1), np.min(f2), 0.0]) * 1.2
     x_lim_orig = (t_start, t_end)
@@ -137,6 +152,7 @@ def main_convolution_app():
     # 1. f1(t) 原始信号 (不变)
     ax0_1.plot(t, f1, label='$f_1(t)$', color='red')
     ax0_1.set_title('$f_1(t)$ 原始信号', fontsize=10)
+    ax0_1.set_ylabel('幅度', fontsize=8)
     ax0_1.set_ylim(min_y_orig, max_y_orig)
     ax0_1.set_xlim(x_lim_orig)
     ax0_1.grid(True, linestyle=':')
@@ -145,6 +161,7 @@ def main_convolution_app():
     # 2. f2(t) 原始信号 (不变)
     ax0_2.plot(t, f2, label='$f_2(t)$', color='green')
     ax0_2.set_title('$f_2(t)$ 原始信号', fontsize=10)
+    ax0_2.set_ylabel('幅度', fontsize=8)
     ax0_2.set_ylim(min_y_orig, max_y_orig)
     ax0_2.set_xlim(x_lim_orig)
     ax0_2.grid(True, linestyle=':')
@@ -160,6 +177,7 @@ def main_convolution_app():
     ax1.fill_between(t, 0, product, color='orange', alpha=0.3, label='$f_1(\\tau)f_2(t-\\tau)$ 乘积')
     ax1.set_title(f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$', fontsize=10)
     ax1.set_xlabel('$\\tau$')
+    ax1.set_ylabel('幅度', fontsize=8)
     ax1.set_ylim(min_y_orig, max_y_orig)
     ax1.set_xlim(x_lim_orig)
     ax1.legend(loc='upper right', fontsize=8)
@@ -178,6 +196,7 @@ def main_convolution_app():
         conv_value = conv_result[idx_max - 1]
         current_t = conv_t[idx_max - 1]
     else:
+        # 如果当前时间小于起始时间，则只显示红点在起始位置
         conv_value = 0.0
         current_t = st.session_state.conv_t_start
 
