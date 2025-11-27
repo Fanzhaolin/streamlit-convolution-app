@@ -5,9 +5,11 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import time
 
-# --- 1, 2, 3. 缓存计算、函数解析、状态管理 (保持不变) ---
+# --- 1, 2, 3. 缓存计算、函数解析、状态管理 ---
 
-INITIAL_SHIFT_T = -6.0 
+# ************ 关键修改: 初始平移时间改为 -3.0 ************
+INITIAL_SHIFT_T = -3.0 
+# **********************************************************
 
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
@@ -56,6 +58,7 @@ def evaluate_function(func_str, t):
         return np.zeros_like(t)
 
 def initialize_state(conv_t_start, conv_t_end, initial_t):
+    # 重置逻辑保持不变，确保使用新的 initial_t
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
         st.session_state.current_t = initial_t 
         st.session_state.conv_t_start = conv_t_start
@@ -84,7 +87,7 @@ def step_backward(dt_step):
         return True
     return False
 
-# --- 4. Plotly 绘图函数 (标题左对齐修正) ---
+# --- 4. Plotly 绘图函数 (标题左对齐修正，保持不变) ---
 
 def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
     
@@ -194,13 +197,11 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         margin=dict(l=20, r=20, t=30, b=20) 
     )
     
-    # *** 关键修正 2: 遍历 annotations 并左对齐 ***
+    # 强制子图标题左对齐
     for annotation in fig['layout']['annotations']:
-        # 设置 x 坐标为 0.01 (非常靠近左边)
         annotation['x'] = 0.01 
-        # 设置 xanchor 为 'left' (文字从左边开始对齐)
         annotation['xanchor'] = 'left' 
-        annotation['font']['size'] = 10 # 保持字体大小
+        annotation['font']['size'] = 10
         
     return fig
 
@@ -242,6 +243,7 @@ def main_convolution_app():
         calculate_convolution_data.clear() 
         st.session_state.reset_flag = True
     
+    # 初始化时使用新的 INITIAL_SHIFT_T
     initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
     # --- 2. 当前平移时间移入侧边栏 ---
@@ -271,6 +273,7 @@ def main_convolution_app():
 
     if col_btn4.button("⏪ 重置"):
         st.session_state.is_running = False
+        # 重置按钮使用新的 INITIAL_SHIFT_T
         st.session_state.current_t = INITIAL_SHIFT_T
         
 
