@@ -1,17 +1,20 @@
 import numpy as np
 from scipy import signal
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 import time
 
-# --- 1. 缓存计算函数 (不变) ---
+# --- 1. 缓存计算函数 (保持不变) ---
 
-# 启动时的默认平移值
 INITIAL_SHIFT_T = -6.0 
 
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
+    """计算原始信号和卷积结果，并缓存以提高动画流畅度。"""
     t = np.arange(t_start, t_end, dt)
+    
+    # 辅助函数定义在内部
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
@@ -31,7 +34,7 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
     
     return t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv
 
-# --- 2. 健壮的函数解析器和离散化 (不变) ---
+# --- 2. 健壮的函数解析器和离散化 (保持不变) ---
 def evaluate_function(func_str, t):
     def u(x):
         return (x >= 0).astype(float)
@@ -57,7 +60,7 @@ def evaluate_function(func_str, t):
         return np.zeros_like(t)
 
 
-# --- 3. 状态管理函数 (不变) ---
+# --- 3. 状态管理函数 (保持不变) ---
 def initialize_state(conv_t_start, conv_t_end, initial_t):
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
         st.session_state.current_t = initial_t 
@@ -87,7 +90,116 @@ def step_backward(dt_step):
         return True
     return False
 
-# --- 4. Streamlit 主应用函数 ---
+# --- 4. Plotly 绘图函数 (修正 fill_between 逻辑) ---
+
+def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
+    
+    t_shift = st.session_state.current_t
+    
+    # 制作 4 个子图
+    fig = make_subplots(
+        rows=4, cols=1, 
+        shared_xaxes=True,
+        vertical_spacing=0.08, 
+        row_heights=[0.18, 0.18, 0.32, 0.32],
+        subplot_titles=('$f_1(t)$ 原始信号', '$f_2(t)$ 原始信号', 
+                        f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$',
+                        '$f_1(t) * f_2(t)$ 最终结果')
+    )
+
+    # --- 计算动态数据 ---
+    t_for_f2 = t_shift - t 
+    f2_shifted = evaluate_function(f2_str, t_for_f2)
+    product = f1 * f2_shifted
+    
+    
+    # 1. f1(t) 原始信号 (Row 1)
+    fig.add_trace(go.Scatter(x=t, y=f1, mode='lines', name='$f_1(t)$', line=dict(color='red', width=2), showlegend=True), row=1, col=1)
+    
+    # 2. f2(t) 原始信号 (Row 2)
+    fig.add_trace(go.Scatter(x=t, y=f2, mode='lines', name='$f_2(t)$', line=dict(color='green', width=2), showlegend=True), row=2, col=1)
+    
+    # 3. 卷积过程图 (Row 3)
+    # 绘制 f1(tau)
+    fig.add_trace(go.Scatter(x=t, y=f1, mode='lines', name='$f_1(\\tau)$', line=dict(color='red', width=2), showlegend=True), row=3, col=1)
+    # 绘制 f2(t-tau)
+    fig.add_trace(go.Scatter(x=t, y=f2_shifted, mode='lines', name='$f_2(t-\\tau)$', line=dict(color='green', dash='dash', width=2), showlegend=True), row=3, col=1)
+    
+    # *** 关键修正: 确保填充区域的 x, y 数据点数量一致且闭合 ***
+    # 创建填充区域的数据（Product，从 0 填充到 Product 值）
+    
+    # 1. 创建闭合的 X 数组： t -> t (反序) -> t (闭合)
+    x_fill = np.concatenate([t, t[::-1]])
+    # 2. 创建闭合的 Y 数组： product -> 0 (反序) -> product (闭合)
+    y_fill = np.concatenate([product, np.zeros_like(product)[::-1]]) 
+    
+    fig.add_trace(go.Scatter(
+        x=x_fill, 
+        y=y_fill, 
+        fill='toself', 
+        fillcolor='rgba(255, 165, 0, 0.3)', 
+        line=dict(width=0),
+        name='$f_1(\\tau)f_2(t-\\tau)$ 乘积',
+        showlegend=True
+    ), row=3, col=1)
+
+    # 4. 最终卷积结果图 (Row 4)
+    idx_max = np.searchsorted(conv_t, t_shift, side='right')
+    
+    # 绘制已完成的卷积结果
+    if idx_max > 0:
+        t_plot = conv_t[:idx_max]
+        y_plot = conv_result[:idx_max]
+        
+        # Plotly 不会自动绘制整个范围，我们绘制整个范围的背景线，然后绘制结果
+        fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='$f_1(t) * f_2(t)$ (全)', line=dict(color='lightgray', width=1, dash='dot'), showlegend=False), row=4, col=1)
+        
+        fig.add_trace(go.Scatter(x=t_plot, y=y_plot, mode='lines', name='$f_1(t) * f_2(t)$', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
+        
+        # 红点标记当前积分结果
+        conv_value = np.interp(t_shift, conv_t, conv_result) 
+        current_t = t_shift 
+        
+        fig.add_trace(go.Scatter(x=[current_t], y=[conv_value], mode='markers', name='当前积分结果', 
+                                 marker=dict(color='red', size=10), showlegend=True), row=4, col=1)
+    else:
+        # 如果还没开始，只画一个零点
+        fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='$f_1(t) * f_2(t)$', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
+        fig.add_trace(go.Scatter(x=[conv_t[0]], y=[0.0], mode='markers', name='当前积分结果', 
+                                 marker=dict(color='red', size=10), showlegend=True), row=4, col=1)
+        
+    # --- 布局和轴设置 ---
+    
+    # 统一设置 X 轴范围
+    fig.update_xaxes(range=[t_start, t_end], showgrid=True, gridwidth=1, gridcolor='lightgray', zeroline=True, zerolinewidth=1, zerolinecolor='black')
+    
+    # 设置原始信号 Y 轴
+    fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=1, col=1)
+    fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=2, col=1)
+    fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=3, col=1)
+    
+    # 设置卷积结果 Y 轴
+    fig.update_yaxes(title_text='幅度', range=[min_y_conv, max_y_conv], row=4, col=1)
+    fig.update_xaxes(title_text='t', row=4, col=1) # 最后一个图设置 x 轴标签
+
+    # 设置图表整体布局
+    fig.update_layout(
+        height=600, 
+        # 移除 title_text，因为它会占用垂直空间，使用 subplot_titles 代替
+        showlegend=True, 
+        # 简化图例，避免重复
+        legend=dict(orientation="h", yanchor="top", y=1.01, xanchor="right", x=1.0),
+        margin=dict(l=20, r=20, t=40, b=20) 
+    )
+    
+    # 确保子图标题字体略小
+    for i in fig['layout']['annotations']:
+        i['font']['size'] = 10
+        
+    return fig
+
+
+# --- 5. Streamlit 主应用函数 (保持不变) ---
 
 def main_convolution_app():
     st.set_page_config(layout="wide") 
@@ -95,10 +207,8 @@ def main_convolution_app():
     st.markdown("### 连续信号卷积运算智能体", unsafe_allow_html=True)
     
     dt = 0.01 
-    # *** 优化 1: 增大步长，让每帧的变化更明显 ***
-    STEP_SIZE = 0.4
-    # *** 优化 2: 增大延迟，让每帧之间更稳定 ***
-    ANIMATION_DELAY = 0.05 
+    STEP_SIZE = 0.2
+    ANIMATION_DELAY = 0.01 
 
     # --- A. 输入控制区 (侧边栏) ---
     st.sidebar.header("输入控制")
@@ -126,7 +236,7 @@ def main_convolution_app():
     
     initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
-    # --- C. 动画控制区 (极致压缩) ---
+    # --- C. 动画控制区 ---
     
     control_container = st.container()
     
@@ -157,92 +267,19 @@ def main_convolution_app():
         st.session_state.current_t = INITIAL_SHIFT_T
         
 
-    # --- D. Matplotlib 绘图 (压缩) ---
+    # --- D. Plotly 绘图和显示 ---
     
-    t_shift = st.session_state.current_t
-    x_lim_orig = (t_start, t_end)
-    
-    fig, (ax0_1, ax0_2, ax1, ax2) = plt.subplots(
-        4, 1, 
-        figsize=(8, 6.5), 
-        sharex=True,
-        gridspec_kw={'hspace': 0.3, 'height_ratios': [1, 1, 2, 2] }
-    )
-    plt.subplots_adjust(top=0.98, bottom=0.04) 
+    fig = create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str)
 
-    TINY_FONT = 8
-    
-    # 1. f1(t) 原始信号
-    ax0_1.plot(t, f1, label='$f_1(t)$', color='red')
-    ax0_1.set_title('$f_1(t)$ 原始信号', fontsize=TINY_FONT)
-    ax0_1.set_ylabel('幅度', fontsize=TINY_FONT - 1)
-    ax0_1.tick_params(axis='y', labelsize=TINY_FONT - 1)
-    ax0_1.set_ylim(min_y_orig, max_y_orig)
-    ax0_1.set_xlim(x_lim_orig)
-    ax0_1.grid(True, linestyle=':')
-    ax0_1.legend(loc='upper right', fontsize=TINY_FONT - 2)
-    
-    # 2. f2(t) 原始信号
-    ax0_2.plot(t, f2, label='$f_2(t)$', color='green')
-    ax0_2.set_title('$f_2(t)$ 原始信号', fontsize=TINY_FONT)
-    ax0_2.set_ylabel('幅度', fontsize=TINY_FONT - 1)
-    ax0_2.tick_params(axis='y', labelsize=TINY_FONT - 1)
-    ax0_2.set_ylim(min_y_orig, max_y_orig)
-    ax0_2.set_xlim(x_lim_orig)
-    ax0_2.grid(True, linestyle=':')
-    ax0_2.legend(loc='upper right', fontsize=TINY_FONT - 2)
-    
-    # 3. 卷积过程图 (动态更新)
-    t_for_f2 = t_shift - t 
-    f2_shifted = evaluate_function(f2_str, t_for_f2)
-    product = f1 * f2_shifted
-    
-    ax1.plot(t, f1, label='$f_1(\\tau)$', color='red')
-    ax1.plot(t, f2_shifted, label='$f_2(t-\\tau)$', color='green', linestyle='--')
-    ax1.fill_between(t, 0, product, color='orange', alpha=0.3, label='$f_1(\\tau)f_2(t-\\tau)$ 乘积')
-    ax1.set_title(f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$', fontsize=TINY_FONT)
-    ax1.set_xlabel('$\\tau$', fontsize=TINY_FONT - 1)
-    ax1.set_ylabel('幅度', fontsize=TINY_FONT - 1)
-    ax1.tick_params(axis='y', labelsize=TINY_FONT - 1)
-    ax1.set_ylim(min_y_orig, max_y_orig)
-    ax1.set_xlim(x_lim_orig)
-    ax1.legend(loc='upper right', fontsize=TINY_FONT - 2)
-    ax1.grid(True, linestyle='--')
-
-    # 4. 最终卷积结果图 (状态累积绘制)
-    idx_max = np.searchsorted(conv_t, t_shift, side='right')
-    
-    if idx_max > 0:
-        t_plot = conv_t[:idx_max]
-        y_plot = conv_result[:idx_max]
-        ax2.plot(t_plot, y_plot, label='$f_1(t) * f_2(t)$', color='blue')
-        
-        conv_value = np.interp(t_shift, conv_t, conv_result) 
-        current_t = t_shift 
-
-    else:
-        conv_value = 0.0
-        current_t = st.session_state.conv_t_start
-
-    ax2.plot([current_t], [conv_value], 'ro', markersize=8, label='当前积分结果')
-    ax2.set_title(f'最终卷积结果 $f_1(t) * f_2(t)$', fontsize=TINY_FONT)
-    ax2.set_xlabel('t', fontsize=TINY_FONT - 1)
-    ax2.set_ylabel('幅度', fontsize=TINY_FONT - 1)
-    ax2.tick_params(axis='both', labelsize=TINY_FONT - 1)
-    ax2.set_ylim(min_y_conv, max_y_conv)
-    ax2.set_xlim(conv_t[0], conv_t[-1])
-    ax2.legend(loc='upper right', fontsize=TINY_FONT - 2)
-    ax2.grid(True, linestyle='--')
-
-    st.pyplot(fig)
-    plt.close(fig)
+    # 使用 st.plotly_chart 显示，Plotly 动画会更流畅
+    st.plotly_chart(fig, use_container_width=True)
     
     # --- E. 动画循环逻辑 ---
     if st.session_state.is_running:
         moved = step_forward(STEP_SIZE)
         
         if moved:
-            time.sleep(ANIMATION_DELAY)
+            time.sleep(ANIMATION_DELAY) 
             st.rerun() 
         else:
             st.session_state.is_running = False
