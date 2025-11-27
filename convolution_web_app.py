@@ -4,19 +4,16 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 # --- 1. 健壮的函数解析器和离散化 (保持不变) ---
-
 def evaluate_function(func_str, t):
+    # ... (evaluate_function 保持不变)
     def u(x):
         return (x >= 0).astype(float)
-    
     def rect(x, width=1):
         return (np.abs(x / width) <= 0.5).astype(float)
-
     env = {
         'np': np, 't': t, 'pi': np.pi, 'exp': np.exp, 'cos': np.cos,
         'sin': np.sin, 'abs': np.abs, 'sqrt': np.sqrt, 'u': u, 'rect': rect 
     }
-
     try:
         y_raw = eval(func_str, {"__builtins__": None}, env)
         if isinstance(y_raw, bool) or isinstance(y_raw, (int, float)):
@@ -35,13 +32,36 @@ def evaluate_function(func_str, t):
         st.info("请检查表达式格式，例如：`u(t) * exp(-t)`")
         return np.zeros_like(t)
 
-# --- 2. Streamlit 主应用函数 ---
+
+# --- 2. 状态初始化函数 ---
+def initialize_state(conv_t_start, conv_t_end):
+    """初始化或重置 Session State."""
+    if 'current_t' not in st.session_state or st.session_state.reset_flag:
+        st.session_state.current_t = conv_t_start
+        st.session_state.conv_t_start = conv_t_start
+        st.session_state.conv_t_end = conv_t_end
+        st.session_state.reset_flag = False
+        st.session_state.is_running = False
+
+def step_forward(dt_step):
+    """点击按钮时，向前推进时间 dt_step."""
+    if st.session_state.current_t < st.session_state.conv_t_end:
+        st.session_state.current_t = min(
+            st.session_state.current_t + dt_step, 
+            st.session_state.conv_t_end
+        )
+
+# --- 3. Streamlit 主应用函数 ---
 
 def main_convolution_app():
-    # 使用 wide 布局来充分利用水平空间
     st.set_page_config(layout="wide") 
     st.title("连续信号卷积运算智能体")
     
+    # 默认时间步长 (用于计算和绘图精度)
+    dt = 0.01 
+    # 每次点击按钮推进的时间步长 (用于动画控制)
+    STEP_SIZE = 0.2
+
     # --- A. 输入控制区 ---
     st.sidebar.header("输入控制")
     f1_str = st.sidebar.text_input("f1(t) =", value="u(t) * exp(-t)")
@@ -55,7 +75,6 @@ def main_convolution_app():
         return
 
     # --- B. 数据计算 ---
-    dt = 0.01 
     t = np.arange(t_start, t_end, dt)
     f1 = evaluate_function(f1_str, t)
     f2 = evaluate_function(f2_str, t)
@@ -65,32 +84,49 @@ def main_convolution_app():
     conv_t_start = conv_t[0]
     conv_t_end = conv_t[-1]
 
-    # --- C. 滑块控制 ---
+    # 初始化/重置状态
+    if st.sidebar.button("运行/更新卷积"):
+        st.session_state.reset_flag = True
+    initialize_state(conv_t_start, conv_t_end)
+
+
+    # --- C. 动画控制区 (替代滑块) ---
     st.subheader("卷积过程控制")
-    # 确保滑块在 Streamlit 应用首次运行时能拿到 conv_t_start 的值
-    t_shift = st.slider(
-        "时间平移 $t$: (当前值 $t = %.2f$)" % conv_t_start,
-        min_value=conv_t_start,
-        max_value=conv_t_end,
-        value=conv_t_start,
-        step=dt,
-        format='t = %.2f'
-    )
     
-    # --- D. Matplotlib 绘图 (缩小 figsize) ---
+    # 使用占位符显示当前时间
+    time_display = st.empty()
+    time_display.markdown(f"**当前平移时间 t = {st.session_state.current_t:.2f}**")
+
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 6])
     
-    # *** 关键修改: 减小 figsize 高度到 (8, 8) ***
+    # 按钮 1: 前进
+    if col_btn1.button("▶️ 前进一步"):
+        step_forward(STEP_SIZE)
+
+    # 按钮 2: 重置
+    if col_btn2.button("⏪ 重置"):
+        st.session_state.current_t = st.session_state.conv_t_start
+        st.session_state.is_running = False # 停止自动播放
+
+    # 按钮 3: 自动播放 (使用 while True 和 time.sleep 模拟动画循环，需要额外的库或调整)
+    # 在 Streamlit 中，自动播放逻辑非常复杂，需要用到 st.empty() 和 time.sleep/rerun 配合。
+    # 暂时只提供手动控制，以保持代码简洁和 Streamlit 的兼容性。
+
+    # --- D. Matplotlib 绘图 ---
+    
+    # 获取当前状态时间
+    t_shift = st.session_state.current_t
+    
     fig, (ax0_1, ax0_2, ax1, ax2) = plt.subplots(
         4, 1, 
         figsize=(8, 8), 
         sharex=True,
         gridspec_kw={
-            'hspace': 0.4, # 减小垂直间距
+            'hspace': 0.4,
             'height_ratios': [1, 1, 2, 2] 
         }
     )
-    
-    plt.subplots_adjust(top=0.95, bottom=0.05) # 调整整体边界以节省空间
+    plt.subplots_adjust(top=0.95, bottom=0.05) 
 
     max_y_orig = np.max([np.max(f1), np.max(f2), 1.0]) * 1.2
     min_y_orig = np.min([np.min(f1), np.min(f2), 0.0]) * 1.2
@@ -98,25 +134,23 @@ def main_convolution_app():
     max_y_conv = np.max([np.max(conv_result), 1.0]) * 1.2
     min_y_conv = np.min([np.min(conv_result), 0.0]) * 1.2
     
-    # 1. f1(t) 原始信号
+    # 1. f1(t) 原始信号 (不变)
     ax0_1.plot(t, f1, label='$f_1(t)$', color='red')
     ax0_1.set_title('$f_1(t)$ 原始信号', fontsize=10)
-    ax0_1.set_ylabel('幅度', fontsize=8)
     ax0_1.set_ylim(min_y_orig, max_y_orig)
     ax0_1.set_xlim(x_lim_orig)
     ax0_1.grid(True, linestyle=':')
     ax0_1.legend(loc='upper right', fontsize=8)
     
-    # 2. f2(t) 原始信号
+    # 2. f2(t) 原始信号 (不变)
     ax0_2.plot(t, f2, label='$f_2(t)$', color='green')
     ax0_2.set_title('$f_2(t)$ 原始信号', fontsize=10)
-    ax0_2.set_ylabel('幅度', fontsize=8)
     ax0_2.set_ylim(min_y_orig, max_y_orig)
     ax0_2.set_xlim(x_lim_orig)
     ax0_2.grid(True, linestyle=':')
     ax0_2.legend(loc='upper right', fontsize=8)
     
-    # 3. 卷积过程图 (动态)
+    # 3. 卷积过程图 (动态更新)
     t_for_f2 = t_shift - t 
     f2_shifted = evaluate_function(f2_str, t_for_f2)
     product = f1 * f2_shifted
@@ -126,34 +160,35 @@ def main_convolution_app():
     ax1.fill_between(t, 0, product, color='orange', alpha=0.3, label='$f_1(\\tau)f_2(t-\\tau)$ 乘积')
     ax1.set_title(f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$', fontsize=10)
     ax1.set_xlabel('$\\tau$')
-    ax1.set_ylabel('幅度', fontsize=8)
     ax1.set_ylim(min_y_orig, max_y_orig)
     ax1.set_xlim(x_lim_orig)
     ax1.legend(loc='upper right', fontsize=8)
     ax1.grid(True, linestyle='--')
 
-    # 4. 最终卷积结果图 (逐步绘制)
-    ax2.set_title(f'最终卷积结果 $f_1(t) * f_2(t)$', fontsize=10)
-    ax2.set_xlabel('t')
-    ax2.set_ylabel('幅度', fontsize=8)
-    ax2.grid(True, linestyle='--')
-    ax2.set_ylim(min_y_conv, max_y_conv)
-    ax2.set_xlim(conv_t[0], conv_t[-1])
-
+    # 4. 最终卷积结果图 (状态累积绘制)
     idx_max = np.searchsorted(conv_t, t_shift, side='right')
+    
     if idx_max > 0:
+        # 仅绘制到当前 t_shift 的数据点
         t_plot = conv_t[:idx_max]
         y_plot = conv_result[:idx_max]
         ax2.plot(t_plot, y_plot, label='$f_1(t) * f_2(t)$', color='blue')
         
+        # 红点标记当前积分结果
         conv_value = conv_result[idx_max - 1]
         current_t = conv_t[idx_max - 1]
     else:
         conv_value = 0.0
-        current_t = conv_t_start
+        current_t = st.session_state.conv_t_start
 
     ax2.plot([current_t], [conv_value], 'ro', markersize=8, label='当前积分结果')
+    ax2.set_title(f'最终卷积结果 $f_1(t) * f_2(t)$', fontsize=10)
+    ax2.set_xlabel('t')
+    ax2.set_ylabel('幅度', fontsize=8)
+    ax2.set_ylim(min_y_conv, max_y_conv)
+    ax2.set_xlim(conv_t[0], conv_t[-1])
     ax2.legend(loc='upper right', fontsize=8)
+    ax2.grid(True, linestyle='--')
 
     st.pyplot(fig)
     plt.close(fig)
