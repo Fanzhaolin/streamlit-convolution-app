@@ -2,17 +2,14 @@ import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
 import streamlit as st
-import time 
+import time # 用于动画延迟
 
 # --- 1. 健壮的函数解析器和离散化 (保持不变) ---
 def evaluate_function(func_str, t):
-    # 辅助函数
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
         return (np.abs(x / width) <= 0.5).astype(float)
-    
-    # 定义安全的执行环境
     env = {
         'np': np, 't': t, 'pi': np.pi, 'exp': np.exp, 'cos': np.cos,
         'sin': np.sin, 'abs': np.abs, 'sqrt': np.sqrt, 'u': u, 'rect': rect 
@@ -36,33 +33,44 @@ def evaluate_function(func_str, t):
         return np.zeros_like(t)
 
 
-# --- 2. 状态初始化函数 ---
-# 关键修改：新增 initial_t 参数来控制启动时的平移值
+# --- 2. 状态管理函数 ---
+
+# 启动时的默认平移值
+INITIAL_SHIFT_T = -6.0 
+
 def initialize_state(conv_t_start, conv_t_end, initial_t):
     """初始化或重置 Session State."""
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
-        # 将 current_t 初始化为您想要的起始平移值
         st.session_state.current_t = initial_t 
         st.session_state.conv_t_start = conv_t_start
         st.session_state.conv_t_end = conv_t_end
         st.session_state.reset_flag = False
-        st.session_state.is_running = False
+        # **新增：动画控制状态**
+        if 'is_running' not in st.session_state:
+             st.session_state.is_running = False
+        # 如果是“运行/更新卷积”，则确保停止动画
+        if st.session_state.is_running:
+             st.session_state.is_running = False
 
 def step_forward(dt_step):
-    """点击按钮时，向前推进时间 dt_step."""
+    """向前推进时间 dt_step."""
     if st.session_state.current_t < st.session_state.conv_t_end:
         st.session_state.current_t = min(
             st.session_state.current_t + dt_step, 
             st.session_state.conv_t_end
         )
+        return True # 表示成功推进
+    return False # 表示到达终点
 
 def step_backward(dt_step):
-    """点击按钮时，向后退回时间 dt_step."""
+    """向后退回时间 dt_step."""
     if st.session_state.current_t > st.session_state.conv_t_start:
         st.session_state.current_t = max(
             st.session_state.current_t - dt_step, 
             st.session_state.conv_t_start
         )
+        return True
+    return False
 
 # --- 3. Streamlit 主应用函数 ---
 
@@ -70,23 +78,19 @@ def main_convolution_app():
     st.set_page_config(layout="wide") 
     st.title("连续信号卷积运算智能体")
     
-    # 默认时间步长 (用于计算和绘图精度)
     dt = 0.01 
-    # 每次点击按钮推进/退回的时间步长 (用于手动控制)
+    # 动画速度：每次前进/后退的步长
     STEP_SIZE = 0.2
+    # 动画延迟：每次重绘的最小间隔（秒）
+    ANIMATION_DELAY = 0.05 
 
     # --- A. 输入控制区 ---
     st.sidebar.header("输入控制")
     f1_str = st.sidebar.text_input("f1(t) =", value="u(t) * exp(-t)")
     f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
     col1, col2 = st.sidebar.columns(2)
-    
-    # **确保默认输入是 -6.0**
     t_start = col1.number_input("T_start:", value=-6.0, step=1.0) 
     t_end = col2.number_input("T_end:", value=10.0, step=1.0)
-    
-    # 设定启动时的平移值（自定义，不再是 conv_t_start）
-    INITIAL_SHIFT_T = -6.0 
     
     if t_start >= t_end:
         st.error("起始时间必须小于结束时间。")
@@ -106,7 +110,6 @@ def main_convolution_app():
     if st.sidebar.button("运行/更新卷积"):
         st.session_state.reset_flag = True
     
-    # 使用自定义的 INITIAL_SHIFT_T 来初始化 current_t
     initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
 
@@ -118,25 +121,42 @@ def main_convolution_app():
     time_display.markdown(f"**当前平移时间 $t = {st.session_state.current_t:.2f}$**")
 
     # 分割控制按钮区域
-    col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1, 1, 1, 5])
+    col_btn1, col_btn2, col_btn3, col_btn4, col_btn5 = st.columns([1.5, 1.5, 1.5, 1.5, 4])
     
     # 按钮 1: 后退
     if col_btn1.button("◀️ 后退一步"):
+        st.session_state.is_running = False # 停止自动播放
         step_backward(STEP_SIZE)
+        
+    # 按钮 2: 自动播放/暂停
+    if st.session_state.is_running:
+        button_label = "⏸️ 暂停"
+    else:
+        button_label = "▶️ 播放"
 
-    # 按钮 2: 前进
-    if col_btn2.button("▶️ 前进一步"):
+    if col_btn2.button(button_label):
+        # 切换 is_running 状态并强制重新运行
+        st.session_state.is_running = not st.session_state.is_running
+        # **关键点：切换状态后，立即触发一次重跑**
+        st.rerun() 
+        
+    # 按钮 3: 前进
+    if col_btn3.button("▶️ 前进一步"):
+        st.session_state.is_running = False # 停止自动播放
         step_forward(STEP_SIZE)
 
-    # 按钮 3: 重置 (重置到 INITIAL_SHIFT_T)
-    if col_btn3.button("⏪ 重置"):
+    # 按钮 4: 重置 (重置到 INITIAL_SHIFT_T)
+    if col_btn4.button("⏪ 重置"):
+        st.session_state.is_running = False
         st.session_state.current_t = INITIAL_SHIFT_T
-        st.session_state.is_running = False 
+        
 
     # --- D. Matplotlib 绘图 ---
     
     # 获取当前状态时间
     t_shift = st.session_state.current_t
+    
+    # ... (Matplotlib 绘图部分代码保持不变) ...
     
     # 设置 Matplotlib 子图
     fig, (ax0_1, ax0_2, ax1, ax2) = plt.subplots(
@@ -157,7 +177,7 @@ def main_convolution_app():
     max_y_conv = np.max([np.max(conv_result), 1.0]) * 1.2
     min_y_conv = np.min([np.min(conv_result), 0.0]) * 1.2
     
-    # 1. f1(t) 原始信号 (不变)
+    # 1. f1(t) 原始信号
     ax0_1.plot(t, f1, label='$f_1(t)$', color='red')
     ax0_1.set_title('$f_1(t)$ 原始信号', fontsize=10)
     ax0_1.set_ylabel('幅度', fontsize=8)
@@ -166,7 +186,7 @@ def main_convolution_app():
     ax0_1.grid(True, linestyle=':')
     ax0_1.legend(loc='upper right', fontsize=8)
     
-    # 2. f2(t) 原始信号 (不变)
+    # 2. f2(t) 原始信号
     ax0_2.plot(t, f2, label='$f_2(t)$', color='green')
     ax0_2.set_title('$f_2(t)$ 原始信号', fontsize=10)
     ax0_2.set_ylabel('幅度', fontsize=8)
@@ -175,7 +195,7 @@ def main_convolution_app():
     ax0_2.grid(True, linestyle=':')
     ax0_2.legend(loc='upper right', fontsize=8)
     
-    # 3. 卷积过程图 (动态更新)
+    # 3. 卷积过程图
     t_for_f2 = t_shift - t 
     f2_shifted = evaluate_function(f2_str, t_for_f2)
     product = f1 * f2_shifted
@@ -191,7 +211,7 @@ def main_convolution_app():
     ax1.legend(loc='upper right', fontsize=8)
     ax1.grid(True, linestyle='--')
 
-    # 4. 最终卷积结果图 (状态累积绘制)
+    # 4. 最终卷积结果图
     idx_max = np.searchsorted(conv_t, t_shift, side='right')
     
     if idx_max > 0:
@@ -201,8 +221,8 @@ def main_convolution_app():
         ax2.plot(t_plot, y_plot, label='$f_1(t) * f_2(t)$', color='blue')
         
         # 红点标记当前积分结果
-        conv_value = np.interp(t_shift, conv_t, conv_result) # 使用插值获取更精确的值
-        current_t = t_shift # 红点标记在 t_shift 处
+        conv_value = np.interp(t_shift, conv_t, conv_result) 
+        current_t = t_shift 
 
     else:
         # 如果当前时间小于卷积起始时间，红点在起始位置
@@ -220,6 +240,20 @@ def main_convolution_app():
 
     st.pyplot(fig)
     plt.close(fig)
+    
+    # --- E. 动画循环逻辑 ---
+    if st.session_state.is_running:
+        # 尝试向前推进
+        moved = step_forward(STEP_SIZE)
+        
+        if moved:
+            # 如果成功推进，短暂延迟后，强制重新运行脚本
+            time.sleep(ANIMATION_DELAY)
+            st.rerun() 
+        else:
+            # 到达终点，停止运行
+            st.session_state.is_running = False
+            st.toast("动画播放完毕！")
 
 if __name__ == "__main__":
     main_convolution_app()
