@@ -11,10 +11,7 @@ INITIAL_SHIFT_T = -6.0
 
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
-    """计算原始信号和卷积结果，并缓存以提高动画流畅度。"""
     t = np.arange(t_start, t_end, dt)
-    
-    # 辅助函数定义在内部
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
@@ -96,7 +93,6 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     
     t_shift = st.session_state.current_t
     
-    # 制作 4 个子图
     fig = make_subplots(
         rows=4, cols=1, 
         shared_xaxes=True,
@@ -125,12 +121,8 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     # 绘制 f2(t-tau)
     fig.add_trace(go.Scatter(x=t, y=f2_shifted, mode='lines', name='$f_2(t-\\tau)$', line=dict(color='green', dash='dash', width=2), showlegend=True), row=3, col=1)
     
-    # *** 关键修正: 确保填充区域的 x, y 数据点数量一致且闭合 ***
-    # 创建填充区域的数据（Product，从 0 填充到 Product 值）
-    
-    # 1. 创建闭合的 X 数组： t -> t (反序) -> t (闭合)
+    # 关键修正: 确保填充区域的 x, y 数据点数量一致且闭合
     x_fill = np.concatenate([t, t[::-1]])
-    # 2. 创建闭合的 Y 数组： product -> 0 (反序) -> product (闭合)
     y_fill = np.concatenate([product, np.zeros_like(product)[::-1]]) 
     
     fig.add_trace(go.Scatter(
@@ -146,53 +138,45 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     # 4. 最终卷积结果图 (Row 4)
     idx_max = np.searchsorted(conv_t, t_shift, side='right')
     
-    # 绘制已完成的卷积结果
     if idx_max > 0:
         t_plot = conv_t[:idx_max]
         y_plot = conv_result[:idx_max]
         
-        # Plotly 不会自动绘制整个范围，我们绘制整个范围的背景线，然后绘制结果
+        # 绘制整个范围的背景线
         fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='$f_1(t) * f_2(t)$ (全)', line=dict(color='lightgray', width=1, dash='dot'), showlegend=False), row=4, col=1)
         
+        # 绘制已完成的卷积结果
         fig.add_trace(go.Scatter(x=t_plot, y=y_plot, mode='lines', name='$f_1(t) * f_2(t)$', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
         
-        # 红点标记当前积分结果
         conv_value = np.interp(t_shift, conv_t, conv_result) 
         current_t = t_shift 
         
         fig.add_trace(go.Scatter(x=[current_t], y=[conv_value], mode='markers', name='当前积分结果', 
                                  marker=dict(color='red', size=10), showlegend=True), row=4, col=1)
     else:
-        # 如果还没开始，只画一个零点
+        # 如果还没开始，绘制完整结果和零点标记
         fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='$f_1(t) * f_2(t)$', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
         fig.add_trace(go.Scatter(x=[conv_t[0]], y=[0.0], mode='markers', name='当前积分结果', 
                                  marker=dict(color='red', size=10), showlegend=True), row=4, col=1)
         
     # --- 布局和轴设置 ---
     
-    # 统一设置 X 轴范围
     fig.update_xaxes(range=[t_start, t_end], showgrid=True, gridwidth=1, gridcolor='lightgray', zeroline=True, zerolinewidth=1, zerolinecolor='black')
     
-    # 设置原始信号 Y 轴
     fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=1, col=1)
     fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=2, col=1)
     fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=3, col=1)
     
-    # 设置卷积结果 Y 轴
     fig.update_yaxes(title_text='幅度', range=[min_y_conv, max_y_conv], row=4, col=1)
-    fig.update_xaxes(title_text='t', row=4, col=1) # 最后一个图设置 x 轴标签
+    fig.update_xaxes(title_text='t', row=4, col=1) 
 
-    # 设置图表整体布局
     fig.update_layout(
         height=600, 
-        # 移除 title_text，因为它会占用垂直空间，使用 subplot_titles 代替
         showlegend=True, 
-        # 简化图例，避免重复
         legend=dict(orientation="h", yanchor="top", y=1.01, xanchor="right", x=1.0),
         margin=dict(l=20, r=20, t=40, b=20) 
     )
     
-    # 确保子图标题字体略小
     for i in fig['layout']['annotations']:
         i['font']['size'] = 10
         
@@ -271,7 +255,6 @@ def main_convolution_app():
     
     fig = create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str)
 
-    # 使用 st.plotly_chart 显示，Plotly 动画会更流畅
     st.plotly_chart(fig, use_container_width=True)
     
     # --- E. 动画循环逻辑 ---
