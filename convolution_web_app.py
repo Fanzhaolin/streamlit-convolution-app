@@ -5,11 +5,10 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import time
 
-# --- 1. 缓存计算函数 (保持不变) ---
+# --- 1, 2, 3. 缓存计算、函数解析、状态管理 (保持不变) ---
 
 INITIAL_SHIFT_T = -6.0 
 
-# 使用 st.cache_data 确保信号和卷积结果只计算一次
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
     t = np.arange(t_start, t_end, dt)
@@ -21,13 +20,10 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
     f1 = evaluate_function(f1_str, t)
     f2 = evaluate_function(f2_str, t)
     
-    # 卷积计算
     conv_result = signal.convolve(f1, f2, mode='full') * dt
     conv_t_len = len(t) + len(t) - 1
-    # 卷积时间轴的起点和终点
     conv_t = np.arange(conv_t_len) * dt + 2 * t_start
     
-    # 获取Y轴范围
     max_y_orig = np.max([np.max(f1), np.max(f2), 1.0]) * 1.2
     min_y_orig = np.min([np.min(f1), np.min(f2), 0.0]) * 1.2
     max_y_conv = np.max([np.max(conv_result), 1.0]) * 1.2
@@ -35,7 +31,6 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
     
     return t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv
 
-# --- 2. 健壮的函数解析器 (保持不变) ---
 def evaluate_function(func_str, t):
     def u(x):
         return (x >= 0).astype(float)
@@ -58,16 +53,42 @@ def evaluate_function(func_str, t):
         y[np.isinf(y)] = 0.0
         return y
     except Exception as e:
-        # 如果函数解析失败，返回全零数组
-        st.error(f"函数解析出错: {e}")
         return np.zeros_like(t)
 
+def initialize_state(conv_t_start, conv_t_end, initial_t):
+    if 'current_t' not in st.session_state or st.session_state.reset_flag:
+        st.session_state.current_t = initial_t 
+        st.session_state.conv_t_start = conv_t_start
+        st.session_state.conv_t_end = conv_t_end
+        st.session_state.reset_flag = False
+        if 'is_running' not in st.session_state:
+             st.session_state.is_running = False
+        if st.session_state.is_running:
+             st.session_state.is_running = False
 
-# --- 3. Plotly 绘图函数 (标题左对齐修正，保持不变) ---
+def step_forward(dt_step):
+    if st.session_state.current_t < st.session_state.conv_t_end:
+        st.session_state.current_t = min(
+            st.session_state.current_t + dt_step, 
+            st.session_state.conv_t_end
+        )
+        return True 
+    return False
 
-def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str, t_shift):
+def step_backward(dt_step):
+    if st.session_state.current_t > st.session_state.conv_t_start:
+        st.session_state.current_t = max(
+            st.session_state.current_t - dt_step, 
+            st.session_state.conv_t_start
+        )
+        return True
+    return False
+
+# --- 4. Plotly 绘图函数 (标题左对齐修正) ---
+
+def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
     
-    # t_shift 现在直接从函数参数传入
+    t_shift = st.session_state.current_t
     
     fig = make_subplots(
         rows=4, cols=1, 
@@ -109,28 +130,23 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     ), row=3, col=1)
 
     # 4. 最终卷积结果图 (Row 4)
-    # 根据当前时间 t_shift 截断卷积结果
     idx_max = np.searchsorted(conv_t, t_shift, side='right')
     
     if idx_max > 0:
         t_plot = conv_t[:idx_max]
         y_plot = conv_result[:idx_max]
         
-        # 绘制整个范围的背景线（虚线）
         fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='f₁(t) * f₂(t) (全)', line=dict(color='lightgray', width=1, dash='dot'), showlegend=False), row=4, col=1)
         
-        # 绘制已完成的卷积结果（实线）
         fig.add_trace(go.Scatter(x=t_plot, y=y_plot, mode='lines', name='f₁(t) * f₂(t)', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
         
         conv_value = np.interp(t_shift, conv_t, conv_result) 
         current_t = t_shift 
         
-        # 标记当前积分点
         fig.add_trace(go.Scatter(x=[current_t], y=[conv_value], mode='markers', name='当前积分结果', 
                                  marker=dict(color='red', size=8), showlegend=True), row=4, col=1)
     else:
-        # 如果还没开始，只显示完整结果的虚线和起点标记
-        fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='f₁(t) * f₂(t) (全)', line=dict(color='lightgray', width=1, dash='dot'), showlegend=False), row=4, col=1)
+        fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='f₁(t) * f₂(t)', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
         fig.add_trace(go.Scatter(x=[conv_t[0]], y=[0.0], mode='markers', name='当前积分结果', 
                                  marker=dict(color='red', size=8), showlegend=True), row=4, col=1)
         
@@ -178,16 +194,18 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         margin=dict(l=20, r=20, t=30, b=20) 
     )
     
-    # 强制子图标题左对齐
+    # *** 关键修正 2: 遍历 annotations 并左对齐 ***
     for annotation in fig['layout']['annotations']:
+        # 设置 x 坐标为 0.01 (非常靠近左边)
         annotation['x'] = 0.01 
+        # 设置 xanchor 为 'left' (文字从左边开始对齐)
         annotation['xanchor'] = 'left' 
-        annotation['font']['size'] = 10
+        annotation['font']['size'] = 10 # 保持字体大小
         
     return fig
 
 
-# --- 4. Streamlit 主应用函数 (使用 Slider 控制平移) ---
+# --- 5. Streamlit 主应用函数 (保持不变) ---
 
 def main_convolution_app():
     st.set_page_config(layout="wide") 
@@ -197,6 +215,8 @@ def main_convolution_app():
     st.sidebar.markdown("---") 
     
     dt = 0.01 
+    STEP_SIZE = 0.2
+    ANIMATION_DELAY = 0.01 
 
     # --- A. 输入控制区 (侧边栏) ---
     st.sidebar.header("输入控制")
@@ -211,52 +231,65 @@ def main_convolution_app():
         return
 
     # --- B. 数据计算 (缓存调用) ---
-    # 这里我们只清除和重新计算数据，不影响 session_state.current_t
-    if st.sidebar.button("运行/更新卷积"):
-        calculate_convolution_data.clear() 
-    
     t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv = \
         calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt)
     
     conv_t_start = conv_t[0]
     conv_t_end = conv_t[-1]
 
-    # --- C. 时间平移控制 (使用 st.slider) ---
+    # 初始化/重置状态
+    if st.sidebar.button("运行/更新卷积"):
+        calculate_convolution_data.clear() 
+        st.session_state.reset_flag = True
     
-    # 确保 session_state 中有 current_t 的值，用于滑块的默认值
-    if 'current_t' not in st.session_state:
-        st.session_state.current_t = INITIAL_SHIFT_T
+    initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
-    # --- 1. 滑块放在主页
-    current_t_value = st.slider(
-        "时间平移控制",
-        min_value=float(conv_t_start),
-        max_value=float(conv_t_end),
-        value=st.session_state.current_t,
-        step=0.01, # 精细控制
-        format="当前 $t = %.2f$"
-    )
-    
-    # 更新 session_state
-    st.session_state.current_t = current_t_value
-    
-    # --- 2. 当前平移时间显示在侧边栏 (更新显示，但不再是控制输入)
+    # --- 2. 当前平移时间移入侧边栏 ---
     st.sidebar.markdown(f"**当前平移时间 $t = {st.session_state.current_t:.2f}$**")
     st.sidebar.markdown("---")
+    
+    # --- C. 动画控制区 (位于主页面图表上方) ---
+    
+    col_btn1, col_btn2, col_btn3, col_btn4, col_btn5 = st.columns([1.5, 1.5, 1.5, 1.5, 4])
+    
+    if col_btn1.button("◀️ 后退一步"):
+        st.session_state.is_running = False
+        step_backward(STEP_SIZE)
+        
+    if st.session_state.is_running:
+        button_label = "⏸️ 暂停"
+    else:
+        button_label = "▶️ 播放"
+
+    if col_btn2.button(button_label):
+        st.session_state.is_running = not st.session_state.is_running
+        st.rerun() 
+        
+    if col_btn3.button("▶️ 前进一步"):
+        st.session_state.is_running = False
+        step_forward(STEP_SIZE)
+
+    if col_btn4.button("⏪ 重置"):
+        st.session_state.is_running = False
+        st.session_state.current_t = INITIAL_SHIFT_T
+        
 
     # --- D. Plotly 绘图和显示 ---
     
-    # 绘图函数使用滑块的当前值
-    fig = create_plotly_figure(
-        t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, 
-        t_start, t_end, f2_str, st.session_state.current_t
-    )
+    fig = create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str)
 
     st.plotly_chart(fig, use_container_width=True)
     
-    # --- E. 动画/步进控制逻辑 (已移除) ---
-    st.markdown("---")
-    st.info("提示：通过使用滑块控制时间，避免了按钮点击导致的整个页面的频繁重跑，从而大大减少了视觉上的闪烁感，操作也更流畅。")
+    # --- E. 动画循环逻辑 ---
+    if st.session_state.is_running:
+        moved = step_forward(STEP_SIZE)
+        
+        if moved:
+            time.sleep(ANIMATION_DELAY) 
+            st.rerun() 
+        else:
+            st.session_state.is_running = False
+            st.toast("动画播放完毕！")
 
 if __name__ == "__main__":
     main_convolution_app()
