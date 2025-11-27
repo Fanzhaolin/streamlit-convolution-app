@@ -9,11 +9,17 @@ import time
 # 启动时的默认平移值
 INITIAL_SHIFT_T = -6.0 
 
-# 使用 st.cache_data 缓存计算结果，只有 f1_str, f2_str, t_start, t_end 改变时才重新计算
+# 使用 st.cache_data 缓存计算结果
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
     """计算原始信号和卷积结果，并缓存以提高动画流畅度。"""
     t = np.arange(t_start, t_end, dt)
+    # 辅助函数定义在内部，避免缓存依赖问题
+    def u(x):
+        return (x >= 0).astype(float)
+    def rect(x, width=1):
+        return (np.abs(x / width) <= 0.5).astype(float)
+        
     f1 = evaluate_function(f1_str, t)
     f2 = evaluate_function(f2_str, t)
     
@@ -32,6 +38,7 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
 
 # --- 2. 健壮的函数解析器和离散化 (保持不变) ---
 def evaluate_function(func_str, t):
+    # 辅助函数
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
@@ -47,14 +54,12 @@ def evaluate_function(func_str, t):
         elif isinstance(y_raw, np.ndarray):
             y = y_raw.astype(float)
         else:
-            # 简化错误处理以防缓存失败
             return np.zeros_like(t) 
 
         y[np.isnan(y)] = 0.0
         y[np.isinf(y)] = 0.0
         return y
     except Exception as e:
-        # 简化错误处理以防缓存失败
         return np.zeros_like(t)
 
 
@@ -99,7 +104,6 @@ def main_convolution_app():
     
     dt = 0.01 
     STEP_SIZE = 0.2
-    # 动画延迟：减少这个值可能会让动画看起来“更快”，但也可能让浏览器渲染压力更大。
     ANIMATION_DELAY = 0.03 
 
     # --- A. 输入控制区 ---
@@ -122,7 +126,6 @@ def main_convolution_app():
     conv_t_end = conv_t[-1]
 
     # 初始化/重置状态
-    # 在侧边栏添加一个按钮，用于清除缓存并重置状态（确保输入改变时缓存生效）
     if st.sidebar.button("运行/更新卷积"):
         # 清除缓存，确保新的函数计算被加载
         calculate_convolution_data.clear() 
@@ -153,7 +156,6 @@ def main_convolution_app():
 
     if col_btn2.button(button_label):
         st.session_state.is_running = not st.session_state.is_running
-        # 立即触发一次重跑以启动/停止循环
         st.rerun() 
         
     # 按钮 3: 前进
@@ -167,36 +169,41 @@ def main_convolution_app():
         st.session_state.current_t = INITIAL_SHIFT_T
         
 
-    # --- D. Matplotlib 绘图 ---
+    # --- D. Matplotlib 绘图 (压缩调整) ---
     
     t_shift = st.session_state.current_t
     x_lim_orig = (t_start, t_end)
     
+    # *** 关键修改 1: 减小 figsize 高度到 (8, 7) ***
     fig, (ax0_1, ax0_2, ax1, ax2) = plt.subplots(
         4, 1, 
-        figsize=(8, 8), 
+        figsize=(8, 7), 
         sharex=True,
-        gridspec_kw={'hspace': 0.4, 'height_ratios': [1, 1, 2, 2] }
+        # *** 关键修改 2: 减小垂直间距 hspace 到 0.35 ***
+        gridspec_kw={'hspace': 0.35, 'height_ratios': [1, 1, 2, 2] }
     )
-    plt.subplots_adjust(top=0.95, bottom=0.05) 
+    # 调整整体边界以节省空间
+    plt.subplots_adjust(top=0.98, bottom=0.04) 
 
     # 1. f1(t) 原始信号
     ax0_1.plot(t, f1, label='$f_1(t)$', color='red')
-    ax0_1.set_title('$f_1(t)$ 原始信号', fontsize=10)
-    ax0_1.set_ylabel('幅度', fontsize=8)
+    # *** 关键修改 3: 减小标题字体 ***
+    ax0_1.set_title('$f_1(t)$ 原始信号', fontsize=9)
+    # *** 关键修改 4: 减小轴标签字体 ***
+    ax0_1.set_ylabel('幅度', fontsize=7)
     ax0_1.set_ylim(min_y_orig, max_y_orig)
     ax0_1.set_xlim(x_lim_orig)
     ax0_1.grid(True, linestyle=':')
-    ax0_1.legend(loc='upper right', fontsize=8)
+    ax0_1.legend(loc='upper right', fontsize=7)
     
     # 2. f2(t) 原始信号
     ax0_2.plot(t, f2, label='$f_2(t)$', color='green')
-    ax0_2.set_title('$f_2(t)$ 原始信号', fontsize=10)
-    ax0_2.set_ylabel('幅度', fontsize=8)
+    ax0_2.set_title('$f_2(t)$ 原始信号', fontsize=9)
+    ax0_2.set_ylabel('幅度', fontsize=7)
     ax0_2.set_ylim(min_y_orig, max_y_orig)
     ax0_2.set_xlim(x_lim_orig)
     ax0_2.grid(True, linestyle=':')
-    ax0_2.legend(loc='upper right', fontsize=8)
+    ax0_2.legend(loc='upper right', fontsize=7)
     
     # 3. 卷积过程图 (动态更新)
     t_for_f2 = t_shift - t 
@@ -206,12 +213,12 @@ def main_convolution_app():
     ax1.plot(t, f1, label='$f_1(\\tau)$', color='red')
     ax1.plot(t, f2_shifted, label='$f_2(t-\\tau)$', color='green', linestyle='--')
     ax1.fill_between(t, 0, product, color='orange', alpha=0.3, label='$f_1(\\tau)f_2(t-\\tau)$ 乘积')
-    ax1.set_title(f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$', fontsize=10)
-    ax1.set_xlabel('$\\tau$')
-    ax1.set_ylabel('幅度', fontsize=8)
+    ax1.set_title(f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$', fontsize=9)
+    ax1.set_xlabel('$\\tau$', fontsize=7)
+    ax1.set_ylabel('幅度', fontsize=7)
     ax1.set_ylim(min_y_orig, max_y_orig)
     ax1.set_xlim(x_lim_orig)
-    ax1.legend(loc='upper right', fontsize=8)
+    ax1.legend(loc='upper right', fontsize=7)
     ax1.grid(True, linestyle='--')
 
     # 4. 最终卷积结果图 (状态累积绘制)
@@ -231,12 +238,12 @@ def main_convolution_app():
         current_t = st.session_state.conv_t_start
 
     ax2.plot([current_t], [conv_value], 'ro', markersize=8, label='当前积分结果')
-    ax2.set_title(f'最终卷积结果 $f_1(t) * f_2(t)$', fontsize=10)
-    ax2.set_xlabel('t')
-    ax2.set_ylabel('幅度', fontsize=8)
+    ax2.set_title(f'最终卷积结果 $f_1(t) * f_2(t)$', fontsize=9)
+    ax2.set_xlabel('t', fontsize=7)
+    ax2.set_ylabel('幅度', fontsize=7)
     ax2.set_ylim(min_y_conv, max_y_conv)
     ax2.set_xlim(conv_t[0], conv_t[-1])
-    ax2.legend(loc='upper right', fontsize=8)
+    ax2.legend(loc='upper right', fontsize=7)
     ax2.grid(True, linestyle='--')
 
     st.pyplot(fig)
