@@ -2,7 +2,7 @@ import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
 import streamlit as st
-import time # 引入 time 库，虽然目前只用于 step_forward/backward 的逻辑，但为未来动画做准备
+import time 
 
 # --- 1. 健壮的函数解析器和离散化 (保持不变) ---
 def evaluate_function(func_str, t):
@@ -37,10 +37,12 @@ def evaluate_function(func_str, t):
 
 
 # --- 2. 状态初始化函数 ---
-def initialize_state(conv_t_start, conv_t_end):
+# 关键修改：新增 initial_t 参数来控制启动时的平移值
+def initialize_state(conv_t_start, conv_t_end, initial_t):
     """初始化或重置 Session State."""
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
-        st.session_state.current_t = conv_t_start
+        # 将 current_t 初始化为您想要的起始平移值
+        st.session_state.current_t = initial_t 
         st.session_state.conv_t_start = conv_t_start
         st.session_state.conv_t_end = conv_t_end
         st.session_state.reset_flag = False
@@ -78,9 +80,13 @@ def main_convolution_app():
     f1_str = st.sidebar.text_input("f1(t) =", value="u(t) * exp(-t)")
     f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
     col1, col2 = st.sidebar.columns(2)
-    # **修改默认起始时间为 -6.0**
+    
+    # **确保默认输入是 -6.0**
     t_start = col1.number_input("T_start:", value=-6.0, step=1.0) 
     t_end = col2.number_input("T_end:", value=10.0, step=1.0)
+    
+    # 设定启动时的平移值（自定义，不再是 conv_t_start）
+    INITIAL_SHIFT_T = -6.0 
     
     if t_start >= t_end:
         st.error("起始时间必须小于结束时间。")
@@ -99,10 +105,12 @@ def main_convolution_app():
     # 初始化/重置状态
     if st.sidebar.button("运行/更新卷积"):
         st.session_state.reset_flag = True
-    initialize_state(conv_t_start, conv_t_end)
+    
+    # 使用自定义的 INITIAL_SHIFT_T 来初始化 current_t
+    initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
 
-    # --- C. 动画控制区 (增加后退按钮) ---
+    # --- C. 动画控制区 ---
     st.subheader("卷积过程控制")
     
     # 显示当前时间
@@ -120,9 +128,9 @@ def main_convolution_app():
     if col_btn2.button("▶️ 前进一步"):
         step_forward(STEP_SIZE)
 
-    # 按钮 3: 重置
+    # 按钮 3: 重置 (重置到 INITIAL_SHIFT_T)
     if col_btn3.button("⏪ 重置"):
-        st.session_state.current_t = st.session_state.conv_t_start
+        st.session_state.current_t = INITIAL_SHIFT_T
         st.session_state.is_running = False 
 
     # --- D. Matplotlib 绘图 ---
@@ -193,10 +201,11 @@ def main_convolution_app():
         ax2.plot(t_plot, y_plot, label='$f_1(t) * f_2(t)$', color='blue')
         
         # 红点标记当前积分结果
-        conv_value = conv_result[idx_max - 1]
-        current_t = conv_t[idx_max - 1]
+        conv_value = np.interp(t_shift, conv_t, conv_result) # 使用插值获取更精确的值
+        current_t = t_shift # 红点标记在 t_shift 处
+
     else:
-        # 如果当前时间小于起始时间，则只显示红点在起始位置
+        # 如果当前时间小于卷积起始时间，红点在起始位置
         conv_value = 0.0
         current_t = st.session_state.conv_t_start
 
