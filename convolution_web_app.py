@@ -84,7 +84,7 @@ def step_backward(dt_step):
         return True
     return False
 
-# --- 4. Plotly 绘图函数 (保持不变) ---
+# --- 4. Plotly 绘图函数 (标题左对齐修正) ---
 
 def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
     
@@ -165,7 +165,7 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         title_text='幅度', 
         linecolor='black', mirror=True, 
         showgrid=True, gridwidth=1, gridcolor='lightgray', 
-        zeroline=True, zerolinewidth=1, zerolinecolor='black', # Y轴零线保留
+        zeroline=True, zerolinewidth=1, zerolinecolor='black',
         ticks='outside', ticklen=5 
     )
 
@@ -194,13 +194,18 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         margin=dict(l=20, r=20, t=30, b=20) 
     )
     
-    for i in fig['layout']['annotations']:
-        i['font']['size'] = 10
+    # *** 关键修正 2: 遍历 annotations 并左对齐 ***
+    for annotation in fig['layout']['annotations']:
+        # 设置 x 坐标为 0.01 (非常靠近左边)
+        annotation['x'] = 0.01 
+        # 设置 xanchor 为 'left' (文字从左边开始对齐)
+        annotation['xanchor'] = 'left' 
+        annotation['font']['size'] = 10 # 保持字体大小
         
     return fig
 
 
-# --- 5. Streamlit 主应用函数 (调整标题和时间位置) ---
+# --- 5. Streamlit 主应用函数 (保持不变) ---
 
 def main_convolution_app():
     st.set_page_config(layout="wide") 
@@ -240,9 +245,8 @@ def main_convolution_app():
     initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
 
     # --- 2. 当前平移时间移入侧边栏 ---
-    # 使用 st.sidebar.markdown 放在“运行/更新卷积”按钮下方
     st.sidebar.markdown(f"**当前平移时间 $t = {st.session_state.current_t:.2f}$**")
-    st.sidebar.markdown("---") # 增加分隔线
+    st.sidebar.markdown("---")
     
     # --- C. 动画控制区 (位于主页面图表上方) ---
     
