@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import time
 
-# --- 1. 缓存计算函数 (保持不变) ---
+# --- 1, 2, 3. 缓存计算、函数解析、状态管理 (保持不变) ---
 
 INITIAL_SHIFT_T = -6.0 
 
@@ -31,7 +31,6 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
     
     return t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv
 
-# --- 2. 健壮的函数解析器和离散化 (保持不变) ---
 def evaluate_function(func_str, t):
     def u(x):
         return (x >= 0).astype(float)
@@ -56,8 +55,6 @@ def evaluate_function(func_str, t):
     except Exception as e:
         return np.zeros_like(t)
 
-
-# --- 3. 状态管理函数 (保持不变) ---
 def initialize_state(conv_t_start, conv_t_end, initial_t):
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
         st.session_state.current_t = initial_t 
@@ -87,7 +84,7 @@ def step_backward(dt_step):
         return True
     return False
 
-# --- 4. Plotly 绘图函数 (修正 fill_between 逻辑) ---
+# --- 4. Plotly 绘图函数 (视觉优化) ---
 
 def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
     
@@ -96,8 +93,10 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     fig = make_subplots(
         rows=4, cols=1, 
         shared_xaxes=True,
-        vertical_spacing=0.08, 
+        # 减小垂直间距
+        vertical_spacing=0.06, 
         row_heights=[0.18, 0.18, 0.32, 0.32],
+        # Matplotlib 风格的标题
         subplot_titles=('$f_1(t)$ 原始信号', '$f_2(t)$ 原始信号', 
                         f'卷积过程: $f_1(\\tau)$ 和 $f_2({t_shift:.2f}-\\tau)$',
                         '$f_1(t) * f_2(t)$ 最终结果')
@@ -121,7 +120,7 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     # 绘制 f2(t-tau)
     fig.add_trace(go.Scatter(x=t, y=f2_shifted, mode='lines', name='$f_2(t-\\tau)$', line=dict(color='green', dash='dash', width=2), showlegend=True), row=3, col=1)
     
-    # 关键修正: 确保填充区域的 x, y 数据点数量一致且闭合
+    # 填充区域
     x_fill = np.concatenate([t, t[::-1]])
     y_fill = np.concatenate([product, np.zeros_like(product)[::-1]]) 
     
@@ -154,29 +153,61 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         fig.add_trace(go.Scatter(x=[current_t], y=[conv_value], mode='markers', name='当前积分结果', 
                                  marker=dict(color='red', size=10), showlegend=True), row=4, col=1)
     else:
-        # 如果还没开始，绘制完整结果和零点标记
         fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='$f_1(t) * f_2(t)$', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
         fig.add_trace(go.Scatter(x=[conv_t[0]], y=[0.0], mode='markers', name='当前积分结果', 
                                  marker=dict(color='red', size=10), showlegend=True), row=4, col=1)
         
-    # --- 布局和轴设置 ---
+    # --- 布局和轴设置 (Matplotlib 风格优化) ---
     
-    fig.update_xaxes(range=[t_start, t_end], showgrid=True, gridwidth=1, gridcolor='lightgray', zeroline=True, zerolinewidth=1, zerolinecolor='black')
-    
-    fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=1, col=1)
-    fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=2, col=1)
-    fig.update_yaxes(title_text='幅度', range=[min_y_orig, max_y_orig], row=3, col=1)
-    
-    fig.update_yaxes(title_text='幅度', range=[min_y_conv, max_y_conv], row=4, col=1)
-    fig.update_xaxes(title_text='t', row=4, col=1) 
-
-    fig.update_layout(
-        height=600, 
-        showlegend=True, 
-        legend=dict(orientation="h", yanchor="top", y=1.01, xanchor="right", x=1.0),
-        margin=dict(l=20, r=20, t=40, b=20) 
+    # 统一设置 X 轴范围
+    fig.update_xaxes(
+        range=[t_start, t_end], 
+        showgrid=True, gridwidth=1, gridcolor='lightgray', # 简化网格线
+        zeroline=True, zerolinewidth=1, zerolinecolor='black', # 强调零线
+        linecolor='black', mirror=True, # 绘制边框
+        ticks='outside', ticklen=5 # Matplotlib 风格的刻度
     )
     
+    # 统一设置 Y 轴 (Matplotlib 风格)
+    fig.update_yaxes(
+        title_text='幅度', 
+        linecolor='black', mirror=True, # 绘制边框
+        showgrid=True, gridwidth=1, gridcolor='lightgray', # 简化网格线
+        zeroline=True, zerolinewidth=1, zerolinecolor='black',
+        ticks='outside', ticklen=5 
+    )
+    
+    fig.update_yaxes(range=[min_y_orig, max_y_orig], row=1, col=1)
+    fig.update_yaxes(range=[min_y_orig, max_y_orig], row=2, col=1)
+    fig.update_yaxes(range=[min_y_orig, max_y_orig], row=3, col=1)
+    fig.update_yaxes(range=[min_y_conv, max_y_conv], row=4, col=1)
+    fig.update_xaxes(title_text='t', row=4, col=1) 
+
+    # 整体布局优化 (Matplotlib 风格)
+    fig.update_layout(
+        height=600, 
+        # 使用 Plotly 提供的 "none" 主题，使其更朴素
+        template="plotly_white", 
+        # 调整字体使其更小更紧凑
+        font=dict(size=10),
+        
+        # 移除默认的全局标题
+        title_text=None,
+        
+        # 将图例移到子图右上方 (loc='upper right' 模拟)
+        showlegend=True, 
+        legend=dict(
+            orientation="v", 
+            yanchor="top", y=0.98, # 位于顶部
+            xanchor="right", x=1.0, # 位于右侧
+            bgcolor="rgba(255, 255, 255, 0.7)", # 透明背景
+            bordercolor="#000000", borderwidth=0.5, # 绘制边框
+            tracegroupgap=5 # 增加行间距
+        ),
+        margin=dict(l=20, r=20, t=30, b=20) 
+    )
+    
+    # 确保子图标题字体略小
     for i in fig['layout']['annotations']:
         i['font']['size'] = 10
         
