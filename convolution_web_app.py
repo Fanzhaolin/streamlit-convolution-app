@@ -3,24 +3,24 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import streamlit as st
 
-# --- 1. ½¡×³µÄº¯Êı½âÎöÆ÷ºÍÀëÉ¢»¯ ---
+# --- 1. å¥å£®çš„å‡½æ•°è§£æå™¨å’Œç¦»æ•£åŒ– (ä¸åŸä»£ç é€»è¾‘å®Œå…¨ä¸€è‡´) ---
 
 def evaluate_function(func_str, t):
     """
-    ½¡×³µØ½âÎö²¢¼ÆËãÓÃ»§ÊäÈëµÄº¯Êı±í´ïÊ½ f(t). 
-    t ÊÇÊ±¼äÖáÊı×é¡£
+    å¥å£®åœ°è§£æå¹¶è®¡ç®—ç”¨æˆ·è¾“å…¥çš„å‡½æ•°è¡¨è¾¾å¼ f(t). 
+    t æ˜¯æ—¶é—´è½´æ•°ç»„ã€‚
     """
     
-    # ¸¨Öúº¯Êı£¬ÔÚ eval »·¾³ÖĞ¶¨Òå
+    # è¾…åŠ©å‡½æ•°ï¼Œåœ¨ eval ç¯å¢ƒä¸­å®šä¹‰
     def u(x):
-        """½×Ô¾º¯Êı u(x)"""
+        """é˜¶è·ƒå‡½æ•° u(x)"""
         return (x >= 0).astype(float)
     
     def rect(x, width=1):
-        """¾ØĞÎÂö³åº¯Êı rect(x/width)"""
+        """çŸ©å½¢è„‰å†²å‡½æ•° rect(x/width)"""
         return (np.abs(x / width) <= 0.5).astype(float)
 
-    # ¶¨Òå°²È«µÄÖ´ĞĞ»·¾³
+    # å®šä¹‰å®‰å…¨çš„æ‰§è¡Œç¯å¢ƒ
     env = {
         'np': np,
         't': t,
@@ -42,96 +42,106 @@ def evaluate_function(func_str, t):
         elif isinstance(y_raw, np.ndarray):
             y = y_raw.astype(float)
         else:
-            raise TypeError(f"±í´ïÊ½·µ»ØÁË²»Ö§³ÖµÄÀàĞÍ: {type(y_raw)}")
+            raise TypeError(f"è¡¨è¾¾å¼è¿”å›äº†ä¸æ”¯æŒçš„ç±»å‹: {type(y_raw)}")
 
         y[np.isnan(y)] = 0.0
         y[np.isinf(y)] = 0.0
         
         return y
     except Exception as e:
-        # ÔÚ Streamlit ÖĞÊ¹ÓÃ st.error ´úÌæ messagebox.showerror
-        st.error(f"½âÎö±í´ïÊ½Ê±³ö´í: {e}")
-        st.info("Çë¼ì²é±í´ïÊ½¸ñÊ½£¬ÀıÈç£º`u(t) * exp(-t)` »ò `rect(t, 2)`")
+        # åœ¨ Streamlit ä¸­ä½¿ç”¨ st.error ä»£æ›¿ messagebox
+        st.error(f"è§£æè¡¨è¾¾å¼æ—¶å‡ºé”™: {e}")
+        st.info("è¯·æ£€æŸ¥è¡¨è¾¾å¼æ ¼å¼ï¼Œä¾‹å¦‚ï¼š`u(t) * exp(-t)` æˆ– `rect(t, 2)`")
         return np.zeros_like(t)
 
-# --- 2. ¾í»ı¼ÆËãºÍ¿ÉÊÓ»¯ (Ö÷º¯Êı) ---
+# --- 2. Streamlit ä¸»åº”ç”¨å‡½æ•° ---
 
 def main_convolution_app():
-    st.set_page_config(layout="wide") # Ê¹ÓÃ¿í²¼¾Ö
-    st.title("Á¬ĞøĞÅºÅ¾í»ıÔËËãÖÇÄÜÌå")
-    st.sidebar.header("ÊäÈë¿ØÖÆ")
+    st.set_page_config(layout="wide")
+    st.title("è¿ç»­ä¿¡å·å·ç§¯è¿ç®—æ™ºèƒ½ä½“")
     
-    # 1. ²à±ßÀ¸ÊäÈë
+    # --- A. Streamlit è¾“å…¥æ§åˆ¶åŒº (æ›¿ä»£ Tkinter/ttk) ---
+    
+    st.sidebar.header("è¾“å…¥æ§åˆ¶")
+    
     f1_str = st.sidebar.text_input("f1(t) =", value="u(t) * exp(-t)")
     f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
     
     col1, col2 = st.sidebar.columns(2)
-    t_start = col1.number_input("T_start:", value=-5.0)
-    t_end = col2.number_input("T_end:", value=10.0)
+    # ä½¿ç”¨ Streamlit çš„è¾“å…¥ç»„ä»¶ï¼Œå¹¶è®¾ç½®é»˜è®¤å€¼
+    t_start = col1.number_input("T_start:", value=-5.0, step=1.0)
+    t_end = col2.number_input("T_end:", value=10.0, step=1.0)
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("**¿ÉÓÃº¯Êı**:")
+    st.sidebar.markdown("**å¯ç”¨å‡½æ•°**:")
     st.sidebar.code("u(t), rect(t, width), exp(), cos(), sin()")
-
-    dt = 0.01 # ±£³Ö¹Ì¶¨²½³¤
+    
+    # --- B. æ•°æ®è®¡ç®—å’ŒéªŒè¯ ---
+    
+    dt = 0.01 
     
     if t_start >= t_end:
-        st.sidebar.error("ÆğÊ¼Ê±¼ä±ØĞëĞ¡ÓÚ½áÊøÊ±¼ä¡£")
+        st.error("èµ·å§‹æ—¶é—´å¿…é¡»å°äºç»“æŸæ—¶é—´ã€‚")
         return
 
-    # 2. ¼ÆËãĞÅºÅºÍ¾í»ı½á¹û
+    # è®¡ç®—æ—¶é—´è½´
     t = np.arange(t_start, t_end, dt)
+    
+    # ç¦»æ•£åŒ–ä¿¡å·
     f1 = evaluate_function(f1_str, t)
     f2 = evaluate_function(f2_str, t)
 
+    # å·ç§¯è®¡ç®—
     conv_result = signal.convolve(f1, f2, mode='full') * dt
     conv_t_len = len(t) + len(t) - 1
+    # ç¡®å®šå·ç§¯åçš„æ—¶é—´è½´ (ä¸åŸä»£ç è®¡ç®—é€»è¾‘ä¸€è‡´)
     conv_t = np.arange(conv_t_len) * dt + 2 * t_start
     
-    # ¼ì²é¼ÆËã½á¹ûÊÇ·ñÓĞĞ§
     if np.sum(np.abs(f1)) == 0 or np.sum(np.abs(f2)) == 0:
-        st.warning("ĞÅºÅf1(t)»òf2(t)ÔÚµ±Ç°Ê±¼ä·¶Î§ÄÚÎªÁã¡£")
+        st.warning("ä¿¡å·f1(t)æˆ–f2(t)åœ¨å½“å‰æ—¶é—´èŒƒå›´å†…ä¸ºé›¶ã€‚")
         return
-
-    # 3. ÉèÖÃ»¬¿é·¶Î§
+        
     conv_t_start = conv_t[0]
     conv_t_end = conv_t[-1]
 
-    # »¬¿é¿ØÖÆÊ±¼äÆ½ÒÆ t
-    st.subheader("¾í»ı¹ı³Ì¿ØÖÆ")
+    # --- C. Streamlit æ»‘å—æ§åˆ¶ (æ›¿ä»£ ttk.Scale) ---
+
+    st.subheader("å·ç§¯è¿‡ç¨‹æ§åˆ¶")
+    # Streamlit æ»‘å—ç›´æ¥è¿”å› t_shift çš„å€¼ï¼Œç®€åŒ–äº† Tkinter ä¸­çš„å›è°ƒå’ŒçŠ¶æ€ç®¡ç†
     t_shift = st.slider(
-        "Ê±¼äÆ½ÒÆ t:",
+        "æ—¶é—´å¹³ç§» $t$: (å½“å‰å€¼ $t = %.2f$)" % conv_t_start,
         min_value=conv_t_start,
         max_value=conv_t_end,
-        value=conv_t_start, # Ä¬ÈÏ´Ó¾í»ıµÄÆğÊ¼Ê±¼ä¿ªÊ¼
+        value=conv_t_start,
         step=dt,
         format='t = %.2f'
     )
     
-    # 4. ³õÊ¼»¯ Matplotlib Í¼±í
-    # ±£³Ö fig size ²»±ä£¬µ« Streamlit »áÔÚÍøÒ³ÉÏÀ­Éì
+    # --- D. Matplotlib ç»˜å›¾ (ä¿ç•™æ ¸å¿ƒç»˜å›¾é€»è¾‘å’Œæ¯”ä¾‹) ---
+    
+    # 1. è®¾ç½® Matplotlib å­å›¾ï¼Œæ³¨æ„ height_ratios ä¸º [1, 1, 2, 2]
     fig, (ax0_1, ax0_2, ax1, ax2) = plt.subplots(
         4, 1, 
-        figsize=(8, 10), 
+        figsize=(8, 12), 
         sharex=True,
         gridspec_kw={
             'hspace': 0.6,
-            'height_ratios': [1, 1, 1.5, 1.5] # Ôö´óÏÂÃæÁ½¸öÍ¼
+            'height_ratios': [1, 1, 2, 2] 
         }
     )
     
-    # --- Í³Ò»»æÍ¼¸¨Öú±äÁ¿ ---
+    # 2. ç»Ÿä¸€ç»˜å›¾è¾…åŠ©å˜é‡
     max_y_orig = np.max([np.max(f1), np.max(f2), 1.0]) * 1.2
     min_y_orig = np.min([np.min(f1), np.min(f2), 0.0]) * 1.2
     x_lim_orig = (t_start, t_end)
     max_y_conv = np.max([np.max(conv_result), 1.0]) * 1.2
     min_y_conv = np.min([np.min(conv_result), 0.0]) * 1.2
-
-
-    # A. Ô­Ê¼ĞÅºÅÕ¹Ê¾ (ax0_1)
+    
+    
+    # --- A'. åŸå§‹ä¿¡å· f1(t) ---
     ax0_1.plot(t, f1, label='$f_1(t)$', color='red')
-    ax0_1.set_title('$f_1(t)$ Ô­Ê¼ĞÅºÅ', fontsize=10)
-    ax0_1.set_ylabel('·ù¶È', fontsize=8)
+    ax0_1.set_title('$f_1(t)$ åŸå§‹ä¿¡å·', fontsize=10)
+    ax0_1.set_ylabel('å¹…åº¦', fontsize=8)
     ax0_1.grid(True, linestyle=':')
     ax0_1.legend(loc='upper right')
     ax0_1.set_ylim(min_y_orig, max_y_orig)
@@ -139,69 +149,72 @@ def main_convolution_app():
     ax0_1.set_xlabel('t', fontsize=8) 
     
 
-    # B. Ô­Ê¼ĞÅºÅÕ¹Ê¾ (ax0_2)
+    # --- B'. åŸå§‹ä¿¡å· f2(t) ---
     ax0_2.plot(t, f2, label='$f_2(t)$', color='green')
-    ax0_2.set_title('$f_2(t)$ Ô­Ê¼ĞÅºÅ', fontsize=10)
-    ax0_2.set_ylabel('·ù¶È', fontsize=8)
+    ax0_2.set_title('$f_2(t)$ åŸå§‹ä¿¡å·', fontsize=10)
+    ax0_2.set_ylabel('å¹…åº¦', fontsize=8)
     ax0_2.grid(True, linestyle=':')
     ax0_2.legend(loc='upper right')
     ax0_2.set_ylim(min_y_orig, max_y_orig)
     ax0_2.set_xlim(x_lim_orig)
     ax0_2.set_xlabel('t', fontsize=8)
 
-    # C. ¾í»ı¹ı³ÌÍ¼ (ax1) - ºËĞÄ¶¯Ì¬²¿·Ö
     
-    # ¼ÆËãÆ½ÒÆºóµÄ f2(t-tau)
+    # --- C'. å·ç§¯è¿‡ç¨‹å›¾ (ax1) - åŠ¨æ€éƒ¨åˆ† ---
+    
+    # æ ¸å¿ƒï¼šè®¡ç®—å¹³ç§»å’Œåè½¬åçš„ä¿¡å· f2(t-tau)
     t_for_f2 = t_shift - t 
     f2_shifted = evaluate_function(f2_str, t_for_f2)
 
     ax1.plot(t, f1, label='$f_1(\\tau)$', color='red')
     ax1.plot(t, f2_shifted, label='$f_2(t-\\tau)$', color='green', linestyle='--')
     
-    # ³Ë»ı²¢Ìî³äÇøÓò
+    # ä¹˜ç§¯å¹¶å¡«å……åŒºåŸŸ
     product = f1 * f2_shifted
-    ax1.fill_between(t, 0, product, color='orange', alpha=0.3, label='$f_1(\\tau)f_2(t-\\tau)$ ³Ë»ı')
+    ax1.fill_between(t, 0, product, color='orange', alpha=0.3, label='$f_1(\\tau)f_2(t-\\tau)$ ä¹˜ç§¯')
 
-    ax1.set_title('¾í»ı¹ı³Ì: $f_1(\\tau)$ ºÍ $f_2(t-\\tau)$', fontsize=10)
+    ax1.set_title(f'å·ç§¯è¿‡ç¨‹: $f_1(\\tau)$ å’Œ $f_2({t_shift:.2f}-\\tau)$', fontsize=10)
     ax1.set_xlabel('$\\tau$')
-    ax1.set_ylabel('·ù¶È')
+    ax1.set_ylabel('å¹…åº¦')
     ax1.legend(loc='upper right')
     ax1.grid(True, linestyle='--')
     ax1.set_ylim(min_y_orig, max_y_orig)
     ax1.set_xlim(x_lim_orig)
 
 
-    # D. ×îÖÕ¾í»ı½á¹ûÍ¼ (ax2) - Öğ²½»æÖÆ
+    # --- D'. æœ€ç»ˆå·ç§¯ç»“æœå›¾ (ax2) - é€æ­¥ç»˜åˆ¶ ---
     
-    ax2.set_title(f'×îÖÕ¾í»ı½á¹û $f_1(t) * f_2(t)$', fontsize=10)
+    ax2.set_title(f'æœ€ç»ˆå·ç§¯ç»“æœ $f_1(t) * f_2(t)$', fontsize=10)
     ax2.set_xlabel('t')
-    ax2.set_ylabel('·ù¶È')
+    ax2.set_ylabel('å¹…åº¦')
     ax2.grid(True, linestyle='--')
     ax2.set_ylim(min_y_conv, max_y_conv)
     ax2.set_xlim(conv_t[0], conv_t[-1])
 
-    # ÊµÏÖ¡°Öğ²½»æÖÆ¡±Âß¼­
+    # 1. æ‰¾åˆ°å½“å‰æ—¶é—´ t_shift å¯¹åº”çš„ç´¢å¼•
     idx_max = np.searchsorted(conv_t, t_shift, side='right')
     
     if idx_max > 0:
+        # 2. æå–å¹¶ç»˜åˆ¶ä»å¼€å§‹åˆ°å½“å‰ç´¢å¼•çš„æ‰€æœ‰æ•°æ®
         t_plot = conv_t[:idx_max]
         y_plot = conv_result[:idx_max]
         
         ax2.plot(t_plot, y_plot, label='$f_1(t) * f_2(t)$', color='blue')
         
-        # »æÖÆºìµã
+        # 3. ç»˜åˆ¶çº¢ç‚¹ (å½“å‰ç§¯åˆ†ç»“æœ)
         conv_value = conv_result[idx_max - 1]
         current_t = conv_t[idx_max - 1]
-        ax2.plot([current_t], [conv_value], 'ro', markersize=8, label='µ±Ç°»ı·Ö½á¹û')
     else:
-        # »¬¿éÔÚÆğÊ¼Ê±¼äÖ®Ç°£¬Ö»»æÖÆºìµãÔÚÆğÊ¼µã
-        ax2.plot([conv_t_start], [0.0], 'ro', markersize=8, label='µ±Ç°»ı·Ö½á¹û')
+        # å¦‚æœæ»‘å—åœ¨èµ·å§‹ç‚¹ä¹‹å‰ï¼Œæ›²çº¿ä¸ºç©º
+        conv_value = 0.0
+        current_t = conv_t_start
 
+    ax2.plot([current_t], [conv_value], 'ro', markersize=8, label='å½“å‰ç§¯åˆ†ç»“æœ')
     ax2.legend(loc='upper right')
     
-    # 5. ÔÚ Streamlit Ò³ÃæÉÏÏÔÊ¾Í¼±í
+    # 4. åœ¨ Streamlit é¡µé¢ä¸Šæ˜¾ç¤ºå›¾è¡¨
     st.pyplot(fig)
-    plt.close(fig) # ±ÜÃâÄÚ´æĞ¹Â©
+    plt.close(fig) # é¿å…å†…å­˜æ³„æ¼
 
 if __name__ == "__main__":
     main_convolution_app()
