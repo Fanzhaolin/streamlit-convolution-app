@@ -3,31 +3,33 @@ from scipy import signal
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-import time
 
-# --- 1, 2, 3. 缓存计算、函数解析、状态管理 ---
-
-# 初始平移时间 t = -3.0
-INITIAL_SHIFT_T = -3.0 
-
-# 移除了全局 CONVOLUTION_DT = 0.005
+# --- 1. 缓存计算、函数解析 ---
 
 @st.cache_data
-# 直接将 0.005 作为默认参数
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.005):
+    """
+    计算卷积核心数据，并使用 Streamlit 缓存避免重复计算。
+    """
     t = np.arange(t_start, t_end, dt)
+    
+    # 辅助函数（在作用域内定义或从外部导入，此处选择在外部定义，但为了保持自包含性，此处暂保留）
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
         return (np.abs(x / width) <= 0.5).astype(float)
         
-    f1 = evaluate_function(f1_str, t)
-    f2 = evaluate_function(f2_str, t)
+    f1 = evaluate_function(f1_str, t, u, rect)
+    f2 = evaluate_function(f2_str, t, u, rect)
     
+    # 执行离散卷积，并乘以 dt 模拟积分
     conv_result = signal.convolve(f1, f2, mode='full') * dt
+    
+    # 计算卷积结果的时间轴
     conv_t_len = len(t) + len(t) - 1
     conv_t = np.arange(conv_t_len) * dt + 2 * t_start
     
+    # 确定 Y 轴的显示范围
     max_y_orig = np.max([np.max(f1), np.max(f2), 1.0]) * 1.2
     min_y_orig = np.min([np.min(f1), np.min(f2), 0.0]) * 1.2
     max_y_conv = np.max([np.max(conv_result), 1.0]) * 1.2
@@ -35,17 +37,18 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.005):
     
     return t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv
 
-def evaluate_function(func_str, t):
-    def u(x):
-        return (x >= 0).astype(float)
-    def rect(x, width=1):
-        return (np.abs(x / width) <= 0.5).astype(float)
+def evaluate_function(func_str, t, u, rect):
+    """
+    解析并计算输入的函数表达式
+    """
     env = {
         'np': np, 't': t, 'pi': np.pi, 'exp': np.exp, 'cos': np.cos,
         'sin': np.sin, 'abs': np.abs, 'sqrt': np.sqrt, 'u': u, 'rect': rect 
     }
     try:
+        # 使用自定义环境执行表达式
         y_raw = eval(func_str, {"__builtins__": None}, env)
+        
         if isinstance(y_raw, bool) or isinstance(y_raw, (int, float)):
             y = np.full_like(t, float(y_raw), dtype=float)
         elif isinstance(y_raw, np.ndarray):
@@ -53,122 +56,45 @@ def evaluate_function(func_str, t):
         else:
             return np.zeros_like(t) 
 
+        # 清理 NaN/Inf 值
         y[np.isnan(y)] = 0.0
         y[np.isinf(y)] = 0.0
         return y
     except Exception as e:
         return np.zeros_like(t)
 
-def initialize_state(conv_t_start, conv_t_end, initial_t):
-    if 'current_t' not in st.session_state or st.session_state.reset_flag:
-        st.session_state.current_t = initial_t 
-        st.session_state.conv_t_start = conv_t_start
-        st.session_state.conv_t_end = conv_t_end
-        st.session_state.reset_flag = False
-        # 始终设置为 False，因为移除了自动播放
-        st.session_state.is_running = False 
+# --- 2. Plotly 绘图函数（仅显示最终结果） ---
 
-def step_forward(dt_step):
-    if st.session_state.current_t < st.session_state.conv_t_end:
-        st.session_state.current_t = min(
-            st.session_state.current_t + dt_step, 
-            st.session_state.conv_t_end
-        )
-        return True 
-    return False
-
-def step_backward(dt_step):
-    if st.session_state.current_t > st.session_state.conv_t_start:
-        st.session_state.current_t = max(
-            st.session_state.current_t - dt_step, 
-            st.session_state.conv_t_start
-        )
-        return True
-    return False
-
-# --- 4. Plotly 绘图函数 ---
-
-def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
+def create_static_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end):
+    """
+    绘制 Plotly 图表：只显示 f1(t)，f2(t) 和最终的卷积结果。
+    """
     
-    t_shift = st.session_state.current_t
-    
+    # 创建 3 个子图：f1(t), f2(t), f1(t)*f2(t)
     fig = make_subplots(
-        rows=4, cols=1, 
+        rows=3, cols=1, 
         shared_xaxes=True,
-        vertical_spacing=0.06, 
-        row_heights=[0.18, 0.18, 0.32, 0.32],
-        subplot_titles=('f₁(t) 原始信号', 'f₂(t) 原始信号', 
-                        f'卷积过程: f₁(\u03c4) 和 f₂({t_shift:.2f}-\u03c4)',
-                        'f₁(t) * f₂(t) 最终结果')
+        vertical_spacing=0.1, 
+        row_heights=[0.3, 0.3, 0.4],
+        subplot_titles=('f₁(t) 原始信号', 'f₂(t) 原始信号', 'f₁(t) * f₂(t) 最终结果')
     )
 
-    # --- 计算动态数据 ---
-    t_for_f2 = t_shift - t 
-    f2_shifted = evaluate_function(f2_str, t_for_f2)
-    product = f1 * f2_shifted
-    
-    
     # 1. f1(t) 原始信号 (Row 1)
     fig.add_trace(go.Scatter(x=t, y=f1, mode='lines', name='f₁(t)', line=dict(color='red', width=2), showlegend=True), row=1, col=1)
     
     # 2. f2(t) 原始信号 (Row 2)
     fig.add_trace(go.Scatter(x=t, y=f2, mode='lines', name='f₂(t)', line=dict(color='green', width=2), showlegend=True), row=2, col=1)
     
-    # 3. 卷积过程图 (Row 3)
-    fig.add_trace(go.Scatter(x=t, y=f1, mode='lines', name='f₁(\u03c4)', line=dict(color='red', width=2), showlegend=True), row=3, col=1)
-    fig.add_trace(go.Scatter(x=t, y=f2_shifted, mode='lines', name=f'f₂({t_shift:.2f}-\u03c4)', line=dict(color='green', dash='dash', width=2), showlegend=True), row=3, col=1)
-    
-    x_fill = np.concatenate([t, t[::-1]])
-    y_fill = np.concatenate([product, np.zeros_like(product)[::-1]]) 
-    
-    fig.add_trace(go.Scatter(
-        x=x_fill, 
-        y=y_fill, 
-        fill='toself', 
-        fillcolor='rgba(255, 165, 0, 0.3)', 
-        line=dict(width=0),
-        name='乘积', 
-        showlegend=True
-    ), row=3, col=1)
+    # 3. 最终卷积结果图 (Row 3)
+    fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='f₁(t) * f₂(t)', line=dict(color='blue', width=2), showlegend=True), row=3, col=1)
 
-    # 4. 最终卷积结果图 (Row 4)
-    idx_max = np.searchsorted(conv_t, t_shift, side='right')
-    
-    if idx_max > 0:
-        t_plot = conv_t[:idx_max]
-        y_plot = conv_result[:idx_max]
-        
-        fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='f₁(t) * f₂(t) (全)', line=dict(color='lightgray', width=1, dash='dot'), showlegend=False), row=4, col=1)
-        
-        fig.add_trace(go.Scatter(x=t_plot, y=y_plot, mode='lines', name='f₁(t) * f₂(t)', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
-        
-        conv_value = np.interp(t_shift, conv_t, conv_result) 
-        current_t = t_shift 
-        
-        fig.add_trace(go.Scatter(x=[current_t], y=[conv_value], mode='markers', name='当前积分结果', 
-                                 marker=dict(color='red', size=8), showlegend=True), row=4, col=1)
-    else:
-        fig.add_trace(go.Scatter(x=conv_t, y=conv_result, mode='lines', name='f₁(t) * f₂(t)', line=dict(color='blue', width=2), showlegend=True), row=4, col=1)
-        fig.add_trace(go.Scatter(x=[conv_t[0]], y=[0.0], mode='markers', name='当前积分结果', 
-                                 marker=dict(color='red', size=8), showlegend=True), row=4, col=1)
-        
     # --- 布局和轴设置 ---
-    
-    # 确保 X 轴范围一致
     fig.update_xaxes(
         range=[t_start, t_end], 
         showgrid=True, gridwidth=1, gridcolor='lightgray', 
-        zeroline=False, 
-        linecolor='black', mirror=True, 
-        ticks='outside', ticklen=5,
-        title_text='t'
+        zeroline=False, linecolor='black', mirror=True, ticks='outside', 
+        showticklabels=True
     )
-    
-    # 强制在所有子图上显示刻度标签
-    fig.update_xaxes(showticklabels=True, row=1, col=1)
-    fig.update_xaxes(showticklabels=True, row=2, col=1)
-    fig.update_xaxes(showticklabels=True, row=3, col=1)
-    fig.update_xaxes(showticklabels=True, row=4, col=1)
     
     fig.update_yaxes(
         title_text='幅度', 
@@ -178,115 +104,90 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         ticks='outside', ticklen=5 
     )
 
+    # 设置 Y 轴范围
     fig.update_yaxes(range=[min_y_orig, max_y_orig], row=1, col=1)
     fig.update_yaxes(range=[min_y_orig, max_y_orig], row=2, col=1)
-    fig.update_yaxes(range=[min_y_orig, max_y_orig], row=3, col=1)
-    fig.update_yaxes(range=[min_y_conv, max_y_conv], row=4, col=1)
+    fig.update_yaxes(range=[min_y_conv, max_y_conv], row=3, col=1)
     
-    # 设置第3个和第4个子图的X轴标题
-    fig.update_xaxes(title_text='\u03c4', row=3, col=1)
-    fig.update_xaxes(title_text='t', row=4, col=1)
+    # 设置 X 轴标题
+    fig.update_xaxes(title_text='t', row=3, col=1)
 
     fig.update_layout(
         height=600, 
         template="plotly_white", 
         font=dict(size=10),
-        title_text=None,
-        
+        title_text="连续信号卷积结果 $f_1(t) * f_2(t)$",
         showlegend=True, 
         legend=dict(
-            orientation="v", 
-            yanchor="top", y=0.98, 
-            xanchor="right", x=1.0, 
-            bgcolor="rgba(255, 255, 255, 0.7)", 
-            bordercolor="#000000", borderwidth=0.5, 
+            orientation="h", yanchor="top", y=1.02, xanchor="left", x=0.01, 
+            bgcolor="rgba(255, 255, 255, 0.7)", bordercolor="#000000", borderwidth=0.5, 
             font=dict(size=8)
         ),
-        margin=dict(l=20, r=20, t=30, b=20) 
+        margin=dict(l=20, r=20, t=50, b=20) 
     )
     
     # 强制子图标题左对齐
     for annotation in fig['layout']['annotations']:
         annotation['x'] = 0.01 
         annotation['xanchor'] = 'left' 
-        annotation['font']['size'] = 10
+        annotation['font']['size'] = 12
         
     return fig
 
 
-# --- 5. Streamlit 主应用函数 ---
+# --- 3. Streamlit 主应用函数 ---
 
 def main_convolution_app():
     st.set_page_config(layout="wide") 
     
-    # 1. 标题移到侧边栏
-    st.sidebar.markdown("### 连续信号卷积运算智能体", unsafe_allow_html=True)
-    st.sidebar.markdown("---") 
+    st.markdown("# 连续信号卷积运算结果展示", unsafe_allow_html=True)
+    st.markdown("输入 $f_1(t)$ 和 $f_2(t)$ 的表达式，系统将直接计算并展示最终卷积结果。")
+    st.markdown("支持的函数：`u(t)` (单位阶跃)，`rect(t, width)` (矩形脉冲)，以及 `np.exp()`, `np.sin()`, `np.cos()` 等。")
+    st.markdown("---")
     
-    # 直接设置 dt 的值
+    # 定义默认参数
     dt = 0.005
-    STEP_SIZE = 0.2
     
-    # --- A. 输入控制区 (侧边栏) ---
-    st.sidebar.header("输入控制")
-    # f1(t) 初始值: rect(t, 4)
-    f1_str = st.sidebar.text_input("f1(t) =", value="rect(t, 4)")
-    f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
-    col1, col2 = st.sidebar.columns(2)
-    t_start = col1.number_input("T_start:", value=-6.0, step=1.0) 
-    t_end = col2.number_input("T_end:", value=10.0, step=1.0)
+    # --- A. 输入控制区 ---
+    st.header("输入控制")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        # f1(t) 初始值: rect(t, 4)
+        f1_str = st.text_input("f₁(t) =", value="rect(t, 4)")
+    with col_f2:
+        f2_str = st.text_input("f₂(t) =", value="rect(t, 2)")
+        
+    col_t_start, col_t_end, col_button = st.columns([1, 1, 1])
+    with col_t_start:
+        t_start = st.number_input("T_start:", value=-6.0, step=1.0) 
+    with col_t_end:
+        t_end = st.number_input("T_end:", value=10.0, step=1.0)
+    
+    with col_button:
+        # 按钮触发计算，并清除缓存以强制更新
+        st.write("---") # 垂直对齐按钮
+        if st.button("▶️ 运行并更新结果"):
+             calculate_convolution_data.clear() # 清除缓存，强制重新计算
+             st.experimental_rerun() # 重新运行应用，使用新缓存值
+    
+    st.markdown("---")
     
     if t_start >= t_end:
-        st.sidebar.error("起始时间必须小于结束时间。")
+        st.error("起始时间必须小于结束时间。")
         return
 
     # --- B. 数据计算 (缓存调用) ---
-    # 调用 calculate_convolution_data 时传入 dt
     t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv = \
         calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt)
     
-    conv_t_start = conv_t[0]
-    conv_t_end = conv_t[-1]
-
-    # 初始化/重置状态
-    if st.sidebar.button("运行/更新卷积"):
-        calculate_convolution_data.clear() 
-        st.session_state.reset_flag = True
+    # --- C. Plotly 绘图和显示 ---
     
-    # 初始化时使用 INITIAL_SHIFT_T = -3.0
-    initialize_state(conv_t_start, conv_t_end, INITIAL_SHIFT_T)
-
-    # --- 2. 当前平移时间移入侧边栏 ---
-    st.sidebar.markdown(f"**当前平移时间 $t = {st.session_state.current_t:.2f}$**")
-    st.sidebar.markdown("---")
+    st.header("卷积运算结果展示")
     
-    # --- C. 手动控制区 ---
-    
-    col_btn1, col_btn3, col_btn4, col_btn5 = st.columns([1.5, 1.5, 1.5, 5.5])
-    
-    # 1. 后退一步 (col_btn1)
-    if col_btn1.button("◀️ 后退一步"):
-        step_backward(STEP_SIZE)
-        
-    # 2. 前进一步 (col_btn3)
-    if col_btn3.button("▶️ 前进一步"):
-        step_forward(STEP_SIZE)
+    fig = create_static_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end)
 
-    # 3. 重置 (col_btn4)
-    if col_btn4.button("⏪ 重置"):
-        # 重置按钮使用 INITIAL_SHIFT_T = -3.0
-        st.session_state.current_t = INITIAL_SHIFT_T
-        
-
-    # --- D. Plotly 绘图和显示 ---
-    
-    fig = create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str)
-
+    # 在 Streamlit 中显示 Plotly 图表
     st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
-    # 在主应用执行前，确保 is_running 状态被初始化，尽管播放被移除，但这是 Streamlit session state 的最佳实践。
-    if 'is_running' not in st.session_state:
-        st.session_state.is_running = False
-        
     main_convolution_app()
