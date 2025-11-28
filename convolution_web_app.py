@@ -10,9 +10,8 @@ import time
 # 初始平移时间 t = -3.0
 INITIAL_SHIFT_T = -3.0 
 
-# ****** 关键修改: 提高精度，dt 从 0.01 减小到 0.005 ******
+# 卷积计算精度
 CONVOLUTION_DT = 0.005
-# **********************************************************
 
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=CONVOLUTION_DT):
@@ -61,15 +60,14 @@ def evaluate_function(func_str, t):
         return np.zeros_like(t)
 
 def initialize_state(conv_t_start, conv_t_end, initial_t):
+    # 状态初始化逻辑，移除is_running相关判断
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
         st.session_state.current_t = initial_t 
         st.session_state.conv_t_start = conv_t_start
         st.session_state.conv_t_end = conv_t_end
         st.session_state.reset_flag = False
-        if 'is_running' not in st.session_state:
-             st.session_state.is_running = False
-        if st.session_state.is_running:
-             st.session_state.is_running = False
+        # 初始化 is_running 状态为 False
+        st.session_state.is_running = False 
 
 def step_forward(dt_step):
     if st.session_state.current_t < st.session_state.conv_t_end:
@@ -226,11 +224,9 @@ def main_convolution_app():
     st.sidebar.markdown("### 连续信号卷积运算智能体", unsafe_allow_html=True)
     st.sidebar.markdown("---") 
     
-    # 使用修改后的精度
     dt = CONVOLUTION_DT 
     STEP_SIZE = 0.2
-    ANIMATION_DELAY = 0.01 
-
+    
     # --- A. 输入控制区 (侧边栏) ---
     st.sidebar.header("输入控制")
     # f1(t) 初始值: rect(t, 4)
@@ -245,7 +241,6 @@ def main_convolution_app():
         return
 
     # --- B. 数据计算 (缓存调用) ---
-    # 调用时使用 CONVOLUTION_DT
     t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv = \
         calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt)
     
@@ -264,29 +259,26 @@ def main_convolution_app():
     st.sidebar.markdown(f"**当前平移时间 $t = {st.session_state.current_t:.2f}$**")
     st.sidebar.markdown("---")
     
-    # --- C. 动画控制区 (位于主页面图表上方) ---
+    # --- C. 手动控制区 (移除了播放/暂停按钮) ---
     
-    col_btn1, col_btn2, col_btn3, col_btn4, col_btn5 = st.columns([1.5, 1.5, 1.5, 1.5, 4])
+    # 调整列宽以容纳三个按钮
+    col_btn1, col_btn3, col_btn4, col_btn5 = st.columns([1.5, 1.5, 1.5, 5.5])
     
+    # 1. 后退一步 (col_btn1)
     if col_btn1.button("◀️ 后退一步"):
-        st.session_state.is_running = False
+        st.session_state.is_running = False # 确保动画状态被清除
         step_backward(STEP_SIZE)
         
-    if st.session_state.is_running:
-        button_label = "⏸️ 暂停"
-    else:
-        button_label = "▶️ 播放"
+    # **已移除 col_btn2 (播放/暂停 按钮及其逻辑)**
 
-    if col_btn2.button(button_label):
-        st.session_state.is_running = not st.session_state.is_running
-        st.rerun() 
-        
+    # 2. 前进一步 (col_btn3)
     if col_btn3.button("▶️ 前进一步"):
-        st.session_state.is_running = False
+        st.session_state.is_running = False # 确保动画状态被清除
         step_forward(STEP_SIZE)
 
+    # 3. 重置 (col_btn4)
     if col_btn4.button("⏪ 重置"):
-        st.session_state.is_running = False
+        st.session_state.is_running = False # 确保动画状态被清除
         # 重置按钮使用 INITIAL_SHIFT_T = -3.0
         st.session_state.current_t = INITIAL_SHIFT_T
         
@@ -297,16 +289,8 @@ def main_convolution_app():
 
     st.plotly_chart(fig, use_container_width=True)
     
-    # --- E. 动画循环逻辑 ---
-    if st.session_state.is_running:
-        moved = step_forward(STEP_SIZE)
-        
-        if moved:
-            time.sleep(ANIMATION_DELAY) 
-            st.rerun() 
-        else:
-            st.session_state.is_running = False
-            st.toast("动画播放完毕！")
+    # --- E. 动画循环逻辑 (已移除) ---
+    # 移除了所有 time.sleep(ANIMATION_DELAY) 和 st.rerun() 的动画代码
 
 if __name__ == "__main__":
     # 定义全局常量 CONVOLUTION_DT，以在 main_convolution_app 中使用
