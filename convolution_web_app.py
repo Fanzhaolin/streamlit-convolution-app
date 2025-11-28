@@ -10,8 +10,12 @@ import time
 # 初始平移时间 t = -3.0
 INITIAL_SHIFT_T = -3.0 
 
+# ****** 关键修改: 提高精度，dt 从 0.01 减小到 0.005 ******
+CONVOLUTION_DT = 0.005
+# **********************************************************
+
 @st.cache_data
-def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.01):
+def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=CONVOLUTION_DT):
     t = np.arange(t_start, t_end, dt)
     def u(x):
         return (x >= 0).astype(float)
@@ -153,7 +157,7 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         
     # --- 布局和轴设置 ---
     
-    # ****** 关键修改: 强制显示所有 X 轴刻度标签 ******
+    # 确保 X 轴范围一致
     fig.update_xaxes(
         range=[t_start, t_end], 
         showgrid=True, gridwidth=1, gridcolor='lightgray', 
@@ -169,8 +173,6 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     fig.update_xaxes(showticklabels=True, row=3, col=1)
     fig.update_xaxes(showticklabels=True, row=4, col=1)
     
-    # -----------------------------------------------
-    
     fig.update_yaxes(
         title_text='幅度', 
         linecolor='black', mirror=True, 
@@ -184,7 +186,7 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     fig.update_yaxes(range=[min_y_orig, max_y_orig], row=3, col=1)
     fig.update_yaxes(range=[min_y_conv, max_y_conv], row=4, col=1)
     
-    # 修改第3个和第4个子图的X轴标题
+    # 设置第3个和第4个子图的X轴标题
     fig.update_xaxes(title_text='\u03c4', row=3, col=1)
     fig.update_xaxes(title_text='t', row=4, col=1)
 
@@ -224,7 +226,8 @@ def main_convolution_app():
     st.sidebar.markdown("### 连续信号卷积运算智能体", unsafe_allow_html=True)
     st.sidebar.markdown("---") 
     
-    dt = 0.01 
+    # 使用修改后的精度
+    dt = CONVOLUTION_DT 
     STEP_SIZE = 0.2
     ANIMATION_DELAY = 0.01 
 
@@ -242,6 +245,7 @@ def main_convolution_app():
         return
 
     # --- B. 数据计算 (缓存调用) ---
+    # 调用时使用 CONVOLUTION_DT
     t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv = \
         calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt)
     
@@ -305,4 +309,10 @@ def main_convolution_app():
             st.toast("动画播放完毕！")
 
 if __name__ == "__main__":
+    # 定义全局常量 CONVOLUTION_DT，以在 main_convolution_app 中使用
+    try:
+        CONVOLUTION_DT
+    except NameError:
+        CONVOLUTION_DT = 0.005 # 确保即使在 __main__ 中也能访问
+        
     main_convolution_app()
