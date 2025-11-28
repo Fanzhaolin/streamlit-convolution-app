@@ -3,9 +3,8 @@ from scipy import signal
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-# 移除了不再需要的 time 模块
 
-# --- 1. 缓存计算、函数解析 ---
+# --- 1. 缓存计算、函数解析 (保持不变) ---
 
 @st.cache_data
 def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.005):
@@ -20,7 +19,6 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.005):
     def rect(x, width=1):
         return (np.abs(x / width) <= 0.5).astype(float)
         
-    # 注意：此处 evaluate_function 的调用方式略有修改，将 u 和 rect 传递进去
     f1 = evaluate_function(f1_str, t, u, rect)
     f2 = evaluate_function(f2_str, t, u, rect)
     
@@ -48,7 +46,6 @@ def evaluate_function(func_str, t, u, rect):
         'sin': np.sin, 'abs': np.abs, 'sqrt': np.sqrt, 'u': u, 'rect': rect 
     }
     try:
-        # 使用自定义环境执行表达式
         y_raw = eval(func_str, {"__builtins__": None}, env)
         
         if isinstance(y_raw, bool) or isinstance(y_raw, (int, float)):
@@ -58,14 +55,13 @@ def evaluate_function(func_str, t, u, rect):
         else:
             return np.zeros_like(t) 
 
-        # 清理 NaN/Inf 值
         y[np.isnan(y)] = 0.0
         y[np.isinf(y)] = 0.0
         return y
     except Exception as e:
         return np.zeros_like(t)
 
-# --- 2. Plotly 绘图函数（仅显示最终结果） ---
+# --- 2. Plotly 绘图函数（保持不变） ---
 
 def create_static_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end):
     """
@@ -115,7 +111,7 @@ def create_static_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_
     fig.update_xaxes(title_text='t', row=3, col=1)
 
     fig.update_layout(
-        height=600, 
+        height=700, # 稍微增加高度以适应 3 个子图
         template="plotly_white", 
         font=dict(size=10),
         title_text="连续信号卷积结果 $f_1(t) * f_2(t)$",
@@ -137,59 +133,60 @@ def create_static_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_
     return fig
 
 
-# --- 3. Streamlit 主应用函数 ---
+# --- 3. Streamlit 主应用函数 (侧边栏布局) ---
 
 def main_convolution_app():
+    # 设置为 wide 布局以提供更多绘图空间
     st.set_page_config(layout="wide") 
-    
-    st.markdown("# 连续信号卷积运算结果展示", unsafe_allow_html=True)
-    st.markdown("输入 $f_1(t)$ 和 $f_2(t)$ 的表达式，系统将直接计算并展示最终卷积结果。")
-    st.markdown("支持的函数：`u(t)` (单位阶跃)，`rect(t, width)` (矩形脉冲)，以及 `np.exp()`, `np.sin()`, `np.cos()` 等。")
-    st.markdown("---")
     
     # 定义默认参数
     dt = 0.005
     
-    # --- A. 输入控制区 ---
-    st.header("输入控制")
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        # f1(t) 初始值: rect(t, 4)
+    # --- A. 左侧：侧边栏控制区 ---
+    with st.sidebar:
+        st.markdown("# 连续信号卷积运算展示", unsafe_allow_html=True)
+        st.markdown("---")
+        
+        st.header("输入控制")
+        st.markdown("支持的函数：`u(t)`, `rect(t, width)`, `np.exp()`, `np.sin()`, `np.cos()` 等。")
+        
+        # f1(t) 和 f2(t) 输入
         f1_str = st.text_input("f₁(t) =", value="rect(t, 4)")
-    with col_f2:
         f2_str = st.text_input("f₂(t) =", value="rect(t, 2)")
         
-    col_t_start, col_t_end, col_button = st.columns([1, 1, 1])
-    with col_t_start:
-        t_start = st.number_input("T_start:", value=-6.0, step=1.0) 
-    with col_t_end:
-        t_end = st.number_input("T_end:", value=10.0, step=1.0)
-    
-    with col_button:
+        # T_start 和 T_end
+        col_t_start, col_t_end = st.columns(2)
+        with col_t_start:
+            t_start = st.number_input("T_start:", value=-6.0, step=1.0) 
+        with col_t_end:
+            t_end = st.number_input("T_end:", value=10.0, step=1.0)
+        
+        st.markdown("---")
+        
         # 按钮触发计算，并清除缓存以强制更新
-        st.write("---") # 垂直对齐按钮
-        if st.button("▶️ 运行并更新结果"):
-             calculate_convolution_data.clear() # 清除缓存，强制重新计算
-             # FIX: 将 st.experimental_rerun() 替换为 st.rerun()
-             st.rerun() # 重新运行应用，使用新缓存值
-    
-    st.markdown("---")
-    
+        if st.button("▶️ 运行并更新结果", use_container_width=True):
+             if t_start >= t_end:
+                 st.error("起始时间必须小于结束时间。")
+                 return
+             calculate_convolution_data.clear() # 清除缓存
+             st.rerun() # 重新运行应用，触发新计算
+             
+    # --- B. 数据校验 (防止 Streamlit 在侧边栏输入前就报错) ---
     if t_start >= t_end:
-        st.error("起始时间必须小于结束时间。")
+        # 如果不满足条件，只显示侧边栏，不显示主区域图表
         return
 
-    # --- B. 数据计算 (缓存调用) ---
+    # --- C. 数据计算 (主区域上方不放任何组件) ---
     t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv = \
         calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt)
     
-    # --- C. Plotly 绘图和显示 ---
+    # --- D. 右侧：Plotly 绘图和显示 ---
     
-    st.header("卷积运算结果展示")
+    # 主区域不放标题，标题已移至侧边栏
     
     fig = create_static_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end)
 
-    # 在 Streamlit 中显示 Plotly 图表
+    # 在 Streamlit 主区域显示 Plotly 图表
     st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
