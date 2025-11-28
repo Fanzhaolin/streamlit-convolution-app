@@ -3,6 +3,7 @@ from scipy import signal
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+# 移除了不再需要的 time 模块
 
 # --- 1. 缓存计算、函数解析 ---
 
@@ -13,12 +14,13 @@ def calculate_convolution_data(f1_str, f2_str, t_start, t_end, dt=0.005):
     """
     t = np.arange(t_start, t_end, dt)
     
-    # 辅助函数（在作用域内定义或从外部导入，此处选择在外部定义，但为了保持自包含性，此处暂保留）
+    # 定义辅助函数
     def u(x):
         return (x >= 0).astype(float)
     def rect(x, width=1):
         return (np.abs(x / width) <= 0.5).astype(float)
         
+    # 注意：此处 evaluate_function 的调用方式略有修改，将 u 和 rect 传递进去
     f1 = evaluate_function(f1_str, t, u, rect)
     f2 = evaluate_function(f2_str, t, u, rect)
     
@@ -168,7 +170,8 @@ def main_convolution_app():
         st.write("---") # 垂直对齐按钮
         if st.button("▶️ 运行并更新结果"):
              calculate_convolution_data.clear() # 清除缓存，强制重新计算
-             st.experimental_rerun() # 重新运行应用，使用新缓存值
+             # FIX: 将 st.experimental_rerun() 替换为 st.rerun()
+             st.rerun() # 重新运行应用，使用新缓存值
     
     st.markdown("---")
     
