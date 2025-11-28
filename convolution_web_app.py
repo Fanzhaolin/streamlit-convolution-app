@@ -57,7 +57,6 @@ def evaluate_function(func_str, t):
         return np.zeros_like(t)
 
 def initialize_state(conv_t_start, conv_t_end, initial_t):
-    # 重置逻辑保持不变，确保使用新的 initial_t
     if 'current_t' not in st.session_state or st.session_state.reset_flag:
         st.session_state.current_t = initial_t 
         st.session_state.conv_t_start = conv_t_start
@@ -86,7 +85,7 @@ def step_backward(dt_step):
         return True
     return False
 
-# --- 4. Plotly 绘图函数 (标题左对齐修正，保持不变) ---
+# --- 4. Plotly 绘图函数 ---
 
 def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig, max_y_conv, min_y_conv, t_start, t_end, f2_str):
     
@@ -154,6 +153,7 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         
     # --- 布局和轴设置 ---
     
+    # ****** 关键修改: 强制显示所有 X 轴刻度标签 ******
     fig.update_xaxes(
         range=[t_start, t_end], 
         showgrid=True, gridwidth=1, gridcolor='lightgray', 
@@ -162,6 +162,14 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
         ticks='outside', ticklen=5,
         title_text='t'
     )
+    
+    # 强制在所有子图上显示刻度标签
+    fig.update_xaxes(showticklabels=True, row=1, col=1)
+    fig.update_xaxes(showticklabels=True, row=2, col=1)
+    fig.update_xaxes(showticklabels=True, row=3, col=1)
+    fig.update_xaxes(showticklabels=True, row=4, col=1)
+    
+    # -----------------------------------------------
     
     fig.update_yaxes(
         title_text='幅度', 
@@ -175,6 +183,8 @@ def create_plotly_figure(t, f1, f2, conv_t, conv_result, max_y_orig, min_y_orig,
     fig.update_yaxes(range=[min_y_orig, max_y_orig], row=2, col=1)
     fig.update_yaxes(range=[min_y_orig, max_y_orig], row=3, col=1)
     fig.update_yaxes(range=[min_y_conv, max_y_conv], row=4, col=1)
+    
+    # 修改第3个和第4个子图的X轴标题
     fig.update_xaxes(title_text='\u03c4', row=3, col=1)
     fig.update_xaxes(title_text='t', row=4, col=1)
 
@@ -220,9 +230,8 @@ def main_convolution_app():
 
     # --- A. 输入控制区 (侧边栏) ---
     st.sidebar.header("输入控制")
-    # ************ 关键修改: f1(t) 初始值改为 rect(t, 4) ************
+    # f1(t) 初始值: rect(t, 4)
     f1_str = st.sidebar.text_input("f1(t) =", value="rect(t, 4)")
-    # ***************************************************************
     f2_str = st.sidebar.text_input("f2(t) =", value="rect(t, 2)")
     col1, col2 = st.sidebar.columns(2)
     t_start = col1.number_input("T_start:", value=-6.0, step=1.0) 
